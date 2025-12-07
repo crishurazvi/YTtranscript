@@ -1,59 +1,27 @@
 import streamlit as st
-# Importăm direct librăria, nu doar clasa, pentru a evita confuziile
-import youtube_transcript_api
-from youtube_transcript_api import YouTubeTranscriptApi
-from youtube_transcript_api.formatters import TextFormatter
-import re
+import sys
+import os
 
-st.set_page_config(page_title="YouTube Transcript Grabber", page_icon="📜")
+st.title("🕵️ Investigator Erori")
 
-st.title("📹 YouTube la Text")
-
-# --- DEBUG INFO (Apare doar dacă e eroare) ---
-# Verificăm ce versiune vede Python
 try:
-    version = youtube_transcript_api.__version__
-except:
-    version = "Necunoscută"
-# ---------------------------------------------
+    import youtube_transcript_api
+    st.write("### 1. Unde crede Python că este librăria?")
+    st.code(youtube_transcript_api.__file__)
+    
+    st.write("### 2. Ce conține folderul curent?")
+    st.code(os.listdir('.'))
 
-def get_video_id(url):
-    video_id = None
-    patterns = [
-        r'(?:v=|\/)([0-9A-Za-z_-]{11}).*',
-        r'(?:youtu\.be\/)([0-9A-Za-z_-]{11})'
-    ]
-    for pattern in patterns:
-        match = re.search(pattern, url)
-        if match:
-            return match.group(1)
-    return None
-
-url = st.text_input("Lipește Link-ul YouTube aici:")
-
-if st.button("Extrage Transcriptul"):
-    if url:
-        video_id = get_video_id(url)
-        
-        if video_id:
-            try:
-                # Metoda 1: Încercăm metoda standard
-                transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=['ro', 'en'])
-                
-                formatter = TextFormatter()
-                text_formatted = formatter.format_transcript(transcript)
-                
-                st.success("Transcript extras cu succes!")
-                st.code(text_formatted, language=None)
-                
-            except Exception as e:
-                # Afișăm eroarea detaliată pentru debugging
-                st.error("A apărut o eroare la extragere.")
-                st.warning(f"Detalii eroare: {e}")
-                st.info(f"Info Debug: Versiune Librărie: {version}")
-                st.info("Dacă eroarea spune 'no attribute get_transcript', verifică să nu ai un fișier numit 'youtube_transcript_api.py' în GitHub.")
-        else:
-            st.warning("Link-ul nu pare valid.")
+    from youtube_transcript_api import YouTubeTranscriptApi
+    st.write("### 3. Test Import Clasă")
+    st.success("Clasa a fost importată.")
+    
+    if hasattr(YouTubeTranscriptApi, 'get_transcript'):
+        st.success("✅ Funcția 'get_transcript' EXISTĂ! Totul ar trebui să meargă.")
     else:
-        st.warning("Te rog introdu un link.")
-        
+        st.error("❌ Funcția 'get_transcript' LIPSEȘTE din clasă.")
+        st.warning("Asta înseamnă că încarci un fișier local care are același nume, dar e gol sau incomplet.")
+
+except Exception as e:
+    st.error(f"Eroare fatală la import: {e}")
+    
