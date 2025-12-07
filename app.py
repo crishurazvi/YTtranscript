@@ -1,55 +1,101 @@
 import streamlit as st
-from youtube_transcript_api import YouTubeTranscriptApi
-import re
+import yt_dlp
+import os
+import glob
 
-st.set_page_config(page_title="YouTube Text", page_icon="📝")
-st.title("📝 YouTube la Text")
+# --- CONFIGURARE PAGINĂ ---
+st.set_page_config(page_title="YouTube to AI", page_icon="🤖")
+st.title("🤖 YouTube Transcript -> AI Prompt")
+st.write("Extrage transcriptul în engleză și adaugă instrucțiuni pentru rezumat.")
 
-# --- VERIFICARE INSTALARE ---
-try:
-    # Verificăm dacă librăria e instalată corect
-    if not hasattr(YouTubeTranscriptApi, 'get_transcript'):
-        st.error("ERROARE INTERNĂ: Librăria s-a instalat greșit.")
-        st.stop()
-except:
-    st.error("Librăria lipsește complet.")
-    st.stop()
-# -----------------------------
+# --- CONFIGURARE PROMPT AI ---
+PROMPT_AI = """
+Ești un asistent expert. Te rog să analizezi următorul transcript (în limba engleză) și să îmi oferi în limba ROMÂNĂ:
+1. REZUMAT EXECUTIV (max 3 fraze).
+2. PUNCTELE CHEIE (5-7 idei esențiale).
+3. CONCLUZIE PRACTICĂ.
 
-def get_video_id(url):
-    if not url: return None
-    patterns = [r'(?:v=|\/)([0-9A-Za-z_-]{11}).*', r'(?:youtu\.be\/)([0-9A-Za-z_-]{11})']
-    for pattern in patterns:
-        match = re.search(pattern, url)
-        if match: return match.group(1)
-    return None
+Iată transcriptul:
+--------------------------------------------------
+"""
 
+# Input URL
 url = st.text_input("Lipește Link-ul YouTube:")
 
-if st.button("Extrage"):
-    video_id = get_video_id(url)
-    if not video_id:
-        st.error("Link invalid.")
+# Buton
+if st.button("Generează Prompt-ul"):
+    if not url:
+        st.warning("Te rog introdu un link.")
     else:
+        # Configurare yt-dlp
+        options = {
+            'skip_download': True,       # Nu descărcăm video
+            'writeautomaticsub': True,   # Subtitrări auto
+            'writesubtitles': True,      # Subtitrări manuale
+            'subtitleslangs': ['en'],    # Doar engleză
+            'outtmpl': 'temp_sub',       # Nume fișier temporar
+            'quiet': True,
+            'no_warnings': True
+        }
+
+        status_area = st.empty() # Zona pentru mesaje de status
+        
         try:
-            # Încercăm să luăm transcriptul
-            transcript = YouTubeTranscriptApi.get_transcript(video_id)
+            status_area.info("⏳ Contactez YouTube... (poate dura câteva secunde)")
             
-            # Formatăm textul
-            text = " ".join([x['text'] for x in transcript])
-            st.success("✅ Succes!")
-            st.text_area("Transcript:", text, height=400)
+            # 1. Curățăm fișiere vechi
+            for f in glob.glob("temp_sub*"): 
+                try: os.remove(f)
+                except: pass
+
+            # 2. Descărcăm
+            with yt_dlp.YoutubeDL(options) as ydl:
+                ydl.download([url])
+
+            # 3. Procesăm fișierul
+            files = glob.glob("temp_sub*.vtt")
             
-        except Exception as e:
-            err = str(e)
-            if "Subtitles are disabled" in err:
-                st.error("🔒 BLOCAJ YOUTUBE DETECTAT")
-                st.warning("""
-                Deși pe telefonul tău transcriptul apare, YouTube a blocat accesul serverului nostru la acest video.
-                Cauză: YouTube crede că serverul este un robot sau videoclipul are restricții geografice/de vârstă.
-                """)
-                st.info("SOLUȚIE TEST: Încearcă un alt video (ex: un tutorial simplu sau știri) pentru a verifica dacă aplicația merge.")
+            if files:
+                filename = files[0]
+                with open(filename, 'r', encoding='utf-8') as f:
+                    lines = f.readlines()
+                    
+                full_text = []
+                seen = set()
+                
+                for line in lines:
+                    line = line.strip()
+                    # Filtrare gunoi VTT
+                    if "-->" in line or line == "WEBVTT" or not line: continue
+                    if line.startswith("<") and line.endswith(">"): continue
+                    # Filtrare etichete timp inline <00:00:01>
+                    if "<" in line and ">" in line:
+                        import re
+                        line = re.sub(r'<[^>]+>', '', line)
+                        
+                    if line in seen: continue
+                    seen.add(line)
+                    full_text.append(line)
+
+                # 4. Asamblăm rezultatul
+                final_output = PROMPT_AI + " ".join(full_text)
+                
+                status_area.success("✅ Gata! Copiază textul de mai jos:")
+                
+                # Afișăm în zona de cod cu buton de copy
+                st.code(final_output, language=None)
+                
+                # Ștergem fișierul temporar
+                os.remove(filename)
+                
             else:
-                st.error("Eroare neașteptată:")
-                st.code(err)
+                status_area.error("❌ Nu am găsit subtitrări în engleză pentru acest video.")
+
+        except Exception as e:
+            err_msg = str(e)
+            if "Too Many Requests" in err_msg or "429" in err_msg:
+                status_area.error("⛔ Blocaj YouTube (429).")
+                st.warning("Serverul Streamlit a fost blocat temporar de YouTube. Încearcă din nou peste 10 minute sau folosește Pydroid pe telefon.")
+            else:
+                status_area.error(f"Eroare: {err_msg}")
                 
