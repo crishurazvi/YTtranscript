@@ -1,15 +1,22 @@
 import streamlit as st
+# Importăm direct librăria, nu doar clasa, pentru a evita confuziile
+import youtube_transcript_api
 from youtube_transcript_api import YouTubeTranscriptApi
 from youtube_transcript_api.formatters import TextFormatter
 import re
 
-# Configurare pagină
 st.set_page_config(page_title="YouTube Transcript Grabber", page_icon="📜")
 
 st.title("📹 YouTube la Text")
-st.write("Lipește linkul și obține textul imediat.")
 
-# Funcție pentru a extrage ID-ul video-ului din link
+# --- DEBUG INFO (Apare doar dacă e eroare) ---
+# Verificăm ce versiune vede Python
+try:
+    version = youtube_transcript_api.__version__
+except:
+    version = "Necunoscută"
+# ---------------------------------------------
+
 def get_video_id(url):
     video_id = None
     patterns = [
@@ -22,7 +29,6 @@ def get_video_id(url):
             return match.group(1)
     return None
 
-# Input utilizator
 url = st.text_input("Lipește Link-ul YouTube aici:")
 
 if st.button("Extrage Transcriptul"):
@@ -31,24 +37,23 @@ if st.button("Extrage Transcriptul"):
         
         if video_id:
             try:
-                # Încercăm să luăm transcriptul (preferabil în română, apoi engleză)
+                # Metoda 1: Încercăm metoda standard
                 transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=['ro', 'en'])
                 
-                # Formatăm textul frumos (fără timpi)
                 formatter = TextFormatter()
                 text_formatted = formatter.format_transcript(transcript)
                 
                 st.success("Transcript extras cu succes!")
-                
-                # Afișăm textul într-o zonă de cod pentru copiere ușoară
-                # Streamlit are un buton de "copy" integrat în blocurile de cod
                 st.code(text_formatted, language=None)
                 
-                st.info("Sfat: Apasă butonul mic de 'Copy' din colțul dreapta-sus al blocului de text de mai sus.")
-                
             except Exception as e:
-                st.error(f"Eroare: Nu am găsit subtitrări sau video-ul este restricționat. ({e})")
+                # Afișăm eroarea detaliată pentru debugging
+                st.error("A apărut o eroare la extragere.")
+                st.warning(f"Detalii eroare: {e}")
+                st.info(f"Info Debug: Versiune Librărie: {version}")
+                st.info("Dacă eroarea spune 'no attribute get_transcript', verifică să nu ai un fișier numit 'youtube_transcript_api.py' în GitHub.")
         else:
             st.warning("Link-ul nu pare valid.")
     else:
         st.warning("Te rog introdu un link.")
+        
