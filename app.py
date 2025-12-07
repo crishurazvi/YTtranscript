@@ -6,8 +6,19 @@ import math
 
 # --- CONFIGURARE PAGINĂ ---
 st.set_page_config(page_title="Splitter Transcript", page_icon="✂️")
-st.title("✂️ YouTube Splitter pentru AI")
-st.info("Această aplicație împarte transcriptul în bucăți mici, ca să le poți copia pe rând în ChatGPT/Gemini fără să blochezi clipboard-ul telefonului.")
+st.title("✂️ YouTube Splitter")
+
+# --- CONTROL MĂRIME (NOU) ---
+# Adăugăm un slider ca să alegi tu cât de mari să fie bucățile
+st.write("🔧 **Setări:**")
+CHUNK_SIZE = st.slider(
+    "Câte caractere să aibă o bucată?", 
+    min_value=2000, 
+    max_value=30000, 
+    value=15000, 
+    step=1000,
+    help="15.000 este ideal pentru ChatGPT/Gemini. Dacă ai un telefon mai vechi, scade la 5.000."
+)
 
 # --- PROMPT AI ---
 PROMPT_INTRO = """
@@ -21,18 +32,15 @@ Iată textul:
 --------------------------------------------------
 """
 
-# Configurare URL
 url = st.text_input("Lipește Link-ul YouTube:")
-CHUNK_SIZE = 4000 # Limita sigură pentru Android
 
-if st.button("Extrage și Împarte"):
+if st.button("Extrage Transcriptul"):
     if not url:
         st.warning("Pune un link!")
     else:
         status = st.empty()
-        status.info("⏳ Descarc subtitrarea...")
+        status.info("⏳ Lucrez...")
         
-        # Configurare yt-dlp
         options = {
             'skip_download': True,
             'writeautomaticsub': True,
@@ -44,16 +52,13 @@ if st.button("Extrage și Împarte"):
         }
 
         try:
-            # Curățenie
             for f in glob.glob("temp_stream*"): 
                 try: os.remove(f)
                 except: pass
 
-            # Descărcare
             with yt_dlp.YoutubeDL(options) as ydl:
                 ydl.download([url])
 
-            # Procesare
             files = glob.glob("temp_stream*.vtt")
             
             if files:
@@ -61,7 +66,6 @@ if st.button("Extrage și Împarte"):
                 with open(filename, 'r', encoding='utf-8') as f:
                     lines = f.readlines()
                 
-                # Curățare text
                 full_text_list = []
                 seen = set()
                 for line in lines:
@@ -78,12 +82,11 @@ if st.button("Extrage și Împarte"):
                 whole_text = " ".join(full_text_list)
                 total_chars = len(whole_text)
                 
-                # Calcul bucăți
+                # Calculăm bucățile folosind valoarea din Slider
                 num_chunks = math.ceil(total_chars / CHUNK_SIZE)
                 
-                status.success(f"✅ Gata! Textul are {total_chars} caractere. L-am împărțit în {num_chunks} bucăți.")
+                status.success(f"✅ Gata! {total_chars} caractere împărțite în doar {num_chunks} bucăți.")
                 
-                # --- AFIȘARE BUCĂȚI ---
                 st.markdown("---")
                 
                 for i in range(num_chunks):
@@ -91,20 +94,14 @@ if st.button("Extrage și Împarte"):
                     end = start + CHUNK_SIZE
                     chunk_text = whole_text[start:end]
                     
-                    # Creăm header-ul pentru AI
                     header = PROMPT_INTRO.format(part=i+1, total=num_chunks)
                     final_block = header + chunk_text
                     
-                    # Afișăm titlul și blocul de cod
-                    st.subheader(f"🔹 Bucata {i+1} din {num_chunks}")
-                    st.caption("Apasă butonul mic de 'Copy' din dreapta-sus al blocului negru:")
-                    
-                    # AICI E CHEIA: st.code are buton de copy integrat
+                    st.subheader(f"🔹 Partea {i+1} din {num_chunks}")
+                    st.caption("Apasă iconița de 'Copy' din colțul dreapta-sus al chenarului:")
                     st.code(final_block, language=None)
-                    
-                    st.markdown("---") # Linie separatoare
+                    st.markdown("---")
 
-                # Curățenie finală
                 os.remove(filename)
 
             else:
@@ -112,6 +109,3 @@ if st.button("Extrage și Împarte"):
                 
         except Exception as e:
             status.error(f"Eroare: {str(e)}")
-            if "429" in str(e):
-                st.error("Serverul a fost blocat temporar de YouTube. Încearcă mai târziu.")
-                
