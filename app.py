@@ -3,14 +3,16 @@ import re
 from youtube_transcript_api import YouTubeTranscriptApi
 from youtube_transcript_api.formatters import TextFormatter
 
-st.set_page_config(page_title="YouTube Transcript", page_icon="📜")
-st.title("📹 YouTube la Text (Auto-Generat)")
+st.set_page_config(page_title="YouTube Grabber", page_icon="📝")
+st.title("📝 YouTube la Text")
 
 def get_video_id(url):
     if not url: return None
+    # Regex imbunatatit pentru a prinde toate formatele de link
     patterns = [
         r'(?:v=|\/)([0-9A-Za-z_-]{11}).*',
-        r'(?:youtu\.be\/)([0-9A-Za-z_-]{11})'
+        r'(?:youtu\.be\/)([0-9A-Za-z_-]{11})',
+        r'(?:shorts\/)([0-9A-Za-z_-]{11})'
     ]
     for pattern in patterns:
         match = re.search(pattern, url)
@@ -20,49 +22,41 @@ def get_video_id(url):
 
 url = st.text_input("Lipește Link-ul YouTube:")
 
-if st.button("Extrage Transcriptul"):
+if st.button("Extrage"):
     if url:
         video_id = get_video_id(url)
         if video_id:
             try:
-                # PASUL 1: Obținem lista tuturor transcripturilor disponibile
-                # Aceasta include și cele "Auto-generated"
-                transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
+                # STRATEGIA 1: Încercare directă (cea mai robustă)
+                # Nu mai listăm transcripturile, ci cerem direct orice există.
+                # Asta ocolește bug-ul de "listare goală".
+                transcript = YouTubeTranscriptApi.get_transcript(video_id)
                 
-                final_transcript = None
+                # Dacă ajungem aici, avem text!
+                formatter = TextFormatter()
+                text = formatter.format_transcript(transcript)
                 
-                # PASUL 2: Încercăm să găsim unul generat automat sau manual
-                # Prioritizăm Româna și Engleza, dar acceptăm și altele
-                try:
-                    # Căutăm manual sau automat în RO sau EN
-                    transcript = transcript_list.find_transcript(['ro', 'en', 'en-US', 'en-GB'])
-                    final_transcript = transcript.fetch()
-                    st.success(f"Am găsit transcript în limba: {transcript.language}")
-                except:
-                    # Dacă nu găsim specific, luăm PRIMUL disponibil (oricare ar fi el)
-                    # Asta rezolvă problema cu "Auto-generated" care au coduri ciudate
-                    st.warning("Nu am găsit RO/EN specific, încercăm orice versiune auto-generată disponibilă...")
-                    for t in transcript_list:
-                        final_transcript = t.fetch()
-                        st.success(f"Am extras transcriptul auto-generat: {t.language} ({t.language_code})")
-                        break
+                st.success("✅ Transcript extras!")
+                st.code(text, language=None)
                 
-                # PASUL 3: Afișăm textul
-                if final_transcript:
-                    formatter = TextFormatter()
-                    text_formatted = formatter.format_transcript(final_transcript)
-                    st.code(text_formatted, language=None)
-                else:
-                    st.error("Nu s-a putut extrage niciun text.")
-
             except Exception as e:
-                # Aici prindem cazul în care CHIAR nu există nimic
-                st.error("Eroare: Acest video nu are niciun fel de transcript disponibil.")
-                st.info("Posibile cauze:")
-                st.write("1. Videoclipul este prea nou și YouTube încă nu a generat textul.")
-                st.write("2. Este un videoclip muzical fără versuri setate.")
-                st.write("3. Creatorul a dezactivat complet subtitrările/CC.")
-                st.warning(f"Detalii tehnice: {e}")
+                # Dacă Strategia 1 eșuează, încercăm Strategia 2 (Listare manuală)
+                try:
+                    transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
+                    # Încercăm să luăm primul disponibil, oricare ar fi el
+                    t = transcript_list.find_transcript(['en', 'ro', 'en-US']) 
+                    text = formatter.format_transcript(t.fetch())
+                    st.success("✅ Transcript extras (Metoda 2)!")
+                    st.code(text, language=None)
+                except Exception as e2:
+                    st.error("Nu am reușit să extragem textul.")
+                    st.warning("De ce se întâmplă asta?")
+                    st.write("""
+                    Deși pe telefon vezi transcriptul, YouTube îl blochează pentru servere în două situații:
+                    1. **Restricție de vârstă:** Dacă video-ul conține condus agresiv sau limbaj licențios, YouTube cere login. Serverul nu e logat.
+                    2. **Cookie Consent (Europa):** Serverul primește pop-up-ul de "Accept Cookies" și nu poate trece de el.
+                    """)
+                    st.info(f"Eroare tehnică: {e}")
         else:
-            st.warning("Link invalid.")
-        
+            st.error("Link invalid.")
+            
