@@ -22,11 +22,26 @@ CHUNK_SIZE = st.slider(
 
 # --- PROMPT AI ---
 PROMPT_INTRO = """
-Ești un asistent expert. Te rog să analizezi acest transcript (PARTEA {part} din {total}) și să aștepți următoarea parte.
-Dacă aceasta este ultima parte, te rog să îmi oferi în limba ROMÂNĂ:
-1. REZUMAT EXECUTIV (max 3 fraze).
-2. PUNCTELE CHEIE (5-7 idei esențiale).
-3. CONCLUZIE PRACTICĂ.
+Acționează ca un analist de conținut expert.
+
+Input: transcriptul complet al unui videoclip YouTube (în orice limbă).
+
+Obiectivele tale:
+1. Tradu tot textul în română, păstrând sensul original.
+2. Reorganizează informația într-o structură clară și didactică.
+3. Păstrează toate detaliile importante; nu elimina idei esențiale.
+4. Nu crea un rezumat scurtat excesiv — vreau în continuare informația completă, dar ordonată.
+5. Elimină repetițiile, expresiile de umplutură și dezordinea specifică vorbirii spontane.
+6. Grupați ideile logic: concepte, exemple, explicații, eventual pași sau recomandări.
+7. Nu adăuga opinii personale.
+
+Output:
+1. **Versiunea curată și tradusă în română**, reorganizată logic.
+2. **Structura pe secțiuni** (ex.: Introducere, Idee 1, Idee 2, Demonstrații, Concluzie).
+3. **Puncte cheie** (dar nu un rezumat excesiv, doar extragerea esențialului).
+4. **Conexiuni sau clarificări** dacă transcriptul este haotic — fără invenții, doar explicații ce reies din text.
+
+Scop: să pot „consuma” tot videoclipul în câteva minute, cu fidelitate maximă, dar fără zgomot și fără să pierd timp pe YouTube.
 
 Iată textul:
 --------------------------------------------------
