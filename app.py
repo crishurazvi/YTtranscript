@@ -15,35 +15,23 @@ CHUNK_SIZE = st.slider(
     "Câte caractere să aibă o bucată?", 
     min_value=2000, 
     max_value=30000, 
-    value=15000, 
+    value=20000, 
     step=1000,
-    help="15.000 este ideal pentru ChatGPT/Gemini. Dacă ai un telefon mai vechi, scade la 5.000."
+    help="20.000 este ideal pentru ChatGPT/Gemini. Dacă ai un telefon mai vechi, scade la 5.000."
 )
 
 # --- PROMPT AI ---
 PROMPT_INTRO = """
-Acționează ca un analist de conținut expert.
-
-Input: transcriptul complet al unui videoclip YouTube (în orice limbă).
-
-Obiectivele tale:
-1. Tradu tot textul în română, păstrând sensul original.
-2. Reorganizează informația într-o structură clară și didactică.
-3. Păstrează toate detaliile importante; nu elimina idei esențiale.
-4. Nu crea un rezumat scurtat excesiv — vreau în continuare informația completă, dar ordonată.
-5. Elimină repetițiile, expresiile de umplutură și dezordinea specifică vorbirii spontane.
-6. Grupați ideile logic: concepte, exemple, explicații, eventual pași sau recomandări.
-7. Nu adăuga opinii personale.
-
-Output:
-1. **Versiunea curată și tradusă în română**, reorganizată logic.
-2. **Structura pe secțiuni** (ex.: Introducere, Idee 1, Idee 2, Demonstrații, Concluzie).
-3. **Puncte cheie** (dar nu un rezumat excesiv, doar extragerea esențialului).
-4. **Conexiuni sau clarificări** dacă transcriptul este haotic — fără invenții, doar explicații ce reies din text.
-
-Scop: să pot „consuma” tot videoclipul în câteva minute, cu fidelitate maximă, dar fără zgomot și fără să pierd timp pe YouTube.
-
-Iată textul:
+Rol: Ești un analist de conținut expert și un traducător profesionist. Scopul tău este să transformi un transcript brut (care poate conține erori de vorbire, repetiții sau marcaje de timp) într-un document de studiu clar, concis și dens în informație, în limba română.
+Sarcina:
+Analizează textul furnizat mai jos.
+Tradu și adaptează conținutul în limba română, folosind un ton natural, dar profesional.
+Structurează informația logic, folosind titluri (H2) și subtitluri (H3) pentru a separa ideile distincte.
+Extrage Detaliile (CRITIC): Nu vreau un rezumat vag (ex: "Vorbește despre importanța banilor"). Vreau argumentele specifice, pașii concreți, cifrele, studiile menționate sau exemplele relevante care susțin ideile.
+Formatare: Folosește liste cu puncte (bullet points) pentru a face textul scanabil. Îngroșă (bold) termenii cheie sau concluziile esențiale.
+Elimină: Introducerile lungi, cererile de "Like & Subscribe", glumele irelevante, repetițiile și ezitările verbale.
+Output-ul final trebuie să îmi permită să înțeleg 95% din valoarea videoului în 10% din timpul necesar vizionării.
+Transcriptul este:
 --------------------------------------------------
 """
 
