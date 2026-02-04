@@ -5,124 +5,132 @@ import glob
 import math
 import re
 
-# --- 1. CONFIGURARE PAGINĂ & DESIGN HIPSTER ---
-st.set_page_config(page_title="Transcript Barista", page_icon="☕", layout="centered")
+# --- 1. CONFIGURARE PAGINĂ & DARK MODE ---
+st.set_page_config(page_title="Dark Roast Transcript", page_icon="☕", layout="centered")
 
-# CSS pentru stilul Pastel / Hipster Coffee
+# CSS pentru stilul Dark Espresso
 st.markdown("""
     <style>
-        /* Fundal general - Crem Latte */
+        /* Fundal general - Dark Espresso */
         .stApp {
-            background-color: #FDFBF7;
-            color: #4A4036;
+            background-color: #121212;
+            color: #E0E0E0;
         }
         
         /* Titluri */
         h1, h2, h3 {
-            color: #4A4036 !important;
+            color: #D4A373 !important; /* Culoare spumă de cafea */
             font-family: 'Helvetica Neue', sans-serif;
             font-weight: 300;
         }
         
-        /* Input text & Slider */
-        .stTextInput > div > div > input {
-            background-color: #FFFFFF;
-            color: #4A4036;
-            border: 1px solid #D8C3A5;
-            border-radius: 12px;
-            padding: 10px;
+        /* Input text & Selectbox & Slider - Dark Mode */
+        .stTextInput > div > div > input, 
+        .stSelectbox > div > div > div {
+            background-color: #2C2C2C;
+            color: #FFFFFF;
+            border: 1px solid #4A4A4A;
+            border-radius: 8px;
         }
         
-        /* Butonul Principal - Stil Matcha */
+        /* Etichete (Labels) */
+        .stMarkdown p, label {
+            color: #B0B0B0 !important;
+        }
+        
+        /* Butonul Principal - Stil Ristretto (Accent puternic) */
         .stButton > button {
-            background-color: #A3B18A;
+            background-color: #BC6C25; /* Caramel închis */
             color: #FFFFFF;
             border: none;
-            border-radius: 25px;
-            padding: 10px 24px;
+            border-radius: 8px;
+            padding: 12px 24px;
             font-weight: bold;
-            transition: all 0.3s ease;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
             width: 100%;
+            transition: all 0.3s ease;
         }
         .stButton > button:hover {
-            background-color: #588157;
-            color: #FFFFFF;
-            transform: translateY(-2px);
+            background-color: #D4A373;
+            color: #121212;
         }
         
-        /* Sidebar styling - Stil Carton Reciclat */
-        section[data-testid="stSidebar"] {
-            background-color: #EAE0D5;
-            border-right: 1px solid #C6AC8F;
-        }
-        
-        /* Expander (Acordeon) styling */
+        /* Expander (Acordeon) styling pentru Dark Mode */
         .streamlit-expanderHeader {
-            background-color: #FFFFFF;
-            border-radius: 10px;
-            border: 1px solid #EAE0D5;
-            color: #4A4036;
+            background-color: #1E1E1E;
+            border-radius: 5px;
+            border: 1px solid #333;
+            color: #E0E0E0;
         }
         
-        /* Code blocks styling - Ascuns vizual, curat */
+        /* Code blocks styling */
         .stCode {
-            background-color: #FFF;
-            border: 1px dashed #C6AC8F;
+            background-color: #000 !important;
+            border: 1px solid #333;
         }
         
         /* Mesaje de status */
         .stAlert {
-            border-radius: 10px;
-            background-color: #FFF0F5; /* Roz pal */
-            color: #4A4036;
+            background-color: #2C2C2C;
+            color: #E0E0E0;
+            border: 1px solid #BC6C25;
         }
     </style>
 """, unsafe_allow_html=True)
 
 # --- 2. HEADER ---
-st.title("☕ YouTube Transcript Barista")
-st.markdown("*Prepară transcriptul perfect pentru ChatGPT, fără cofeină.*")
+st.title("☕ Dark Roast Transcript")
+st.markdown("---")
 
-# --- 3. SIDEBAR (SETĂRI) ---
-with st.sidebar:
-    st.header("⚙️ Setări Măcinare")
-    
-    # 3.1 Selector Limbă (AICI ESTE BUTONUL DE LIMBĂ CERUT)
+# --- 3. CONTROALE (Acum în pagina principală) ---
+# Folosim coloane pentru a pune setările una lângă alta
+col1, col2 = st.columns(2)
+
+with col1:
+    # 3.1 Selector Limbă
     lang_options = {
+        "🇬🇧 English": "en",
         "🇷🇴 Română": "ro",
-        "🇬🇧 Engleză": "en",
         "🇫🇷 Franceză": "fr",
         "🇪🇸 Spaniolă": "es",
         "🇩🇪 Germană": "de",
         "🇮🇹 Italiană": "it"
     }
-    st.write("**1. Alege Limba Video-ului:**")
-    selected_lang_label = st.selectbox("Limbă", list(lang_options.keys()), label_visibility="collapsed")
+    # Listăm cheile pentru a seta default pe index 0 (English)
+    lang_keys = list(lang_options.keys())
+    
+    st.write("**Limbă Video:**")
+    selected_lang_label = st.selectbox(
+        "Limbă", 
+        lang_keys, 
+        index=0, # Index 0 este English acum
+        label_visibility="collapsed"
+    )
     selected_lang_code = lang_options[selected_lang_label]
-    
-    st.markdown("---")
-    
-    # 3.2 Slider Mărime (AICI ESTE SLIDERUL CERUT)
-    st.write("**2. Dimensiune Porție (Caractere):**")
+
+with col2:
+    # 3.2 Slider Mărime
+    st.write("**Dimensiune (Caractere):**")
     CHUNK_SIZE = st.slider(
         "Mărime Chunk", 
         min_value=2000, 
         max_value=30000, 
         value=15000, 
         step=1000,
-        label_visibility="collapsed",
-        help="Alege cât text să fie în fiecare 'înghițitură' pentru AI."
+        label_visibility="collapsed"
     )
-    st.caption(f"Setat la: {CHUNK_SIZE} caractere")
 
-# --- 4. PROMPT AI ---
+# --- 4. INPUT URL ---
+st.write("") # Spațiu
+st.write("**Link YouTube:**")
+url = st.text_input("Link", label_visibility="collapsed", placeholder="https://youtube.com/...")
+
+# --- 5. PROMPT AI ---
 PROMPT_INTRO = """
 Rol: Ești un analist de conținut expert.
 Context: Aceasta este partea {part} din {total} a transcriptului.
 
 Sarcina:
-1. Analizează textul (tradu în Română dacă e cazul).
+1. Analizează textul (tradu în {lang} dacă e cazul).
 2. Extrage ideile principale, cifrele și argumentele.
 3. Ignoră introducerile și reclamele.
 4. Formatează cu Titluri și Bullet Points.
@@ -131,16 +139,14 @@ Transcript:
 --------------------------------------------------
 """
 
-# --- 5. INTERFAȚA PRINCIPALĂ ---
-st.write("Link-ul YouTube:")
-url = st.text_input("Link", label_visibility="collapsed", placeholder="https://youtube.com/...")
-
-if st.button("🍵 Prepară Transcriptul"):
+# --- 6. BUTON ACȚIUNE ---
+st.write("")
+if st.button("🌑 Generează Transcriptul"):
     if not url:
-        st.warning("⚠️ Te rog pune un link valid (comanda e goală).")
+        st.warning("⚠️ Te rog pune un link valid.")
     else:
         status = st.empty()
-        status.info("🍂 Culegem boabele (Descarc subtitrarea)...")
+        status.info("☕ Se prepară (Descarc subtitrarea)...")
         
         # Configurare yt-dlp
         options = {
@@ -193,24 +199,25 @@ if st.button("🍵 Prepară Transcriptul"):
                     total_chars = len(whole_text)
                     num_chunks = math.ceil(total_chars / CHUNK_SIZE)
                     
-                    status.success(f"✅ Gata! Avem {num_chunks} porții proaspete.")
+                    status.success(f"✅ Gata! {num_chunks} părți pregătite.")
+                    st.markdown("---")
                     
-                    st.markdown("### 📋 Porțiile tale (Click să deschizi & Copy)")
-                    
-                    # Generare Bucăți
+                    # Generare Bucăți - Stil Minimalist
                     for i in range(num_chunks):
                         start = i * CHUNK_SIZE
                         end = start + CHUNK_SIZE
                         chunk_text = whole_text[start:end]
                         
-                        header = PROMPT_INTRO.format(part=i+1, total=num_chunks)
+                        # Setăm limba în prompt în funcție de selecție (doar numele limbii)
+                        lang_name = selected_lang_label.split(" ")[1] 
+                        header = PROMPT_INTRO.format(part=i+1, total=num_chunks, lang=lang_name)
                         final_block = header + chunk_text
                         
-                        # AICI E SOLUȚIA PENTRU "NU VREAU SA VAD TEXTUL, DOAR COPY"
-                        # Folosim st.expander care stă închis implicit.
-                        label = f"🍪 Partea {i+1} (din {num_chunks})"
-                        with st.expander(label, expanded=False):
-                            st.caption("Apasă iconița mică de 'Copy' din dreapta sus a chenarului 👇")
+                        # DESIGN CERUT: Doar buton copy, ascuns textul
+                        # Folosim st.expander închis implicit
+                        with st.expander(f"📋 COPIAZĂ PARTEA {i+1} (Click aici)", expanded=False):
+                            st.caption("Apasă iconița de 'Copy' din colțul dreapta-sus al chenarului negru 👇")
+                            # st.code este singura metodă nativă Streamlit care oferă buton de copy
                             st.code(final_block, language="text")
 
                 try: os.remove(filename)
@@ -220,5 +227,4 @@ if st.button("🍵 Prepară Transcriptul"):
                 status.error(f"❌ Nu am găsit subtitrări pentru limba selectată ({selected_lang_label}).")
                 
         except Exception as e:
-            status.error(f"Eroare la preparare: {str(e)}")
-            
+            status.error(f"Eroare: {str(e)}")
