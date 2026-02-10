@@ -114,7 +114,7 @@ with col2:
         "Mărime Chunk", 
         min_value=2000, 
         max_value=30000, 
-        value=15000, 
+        value=20000, 
         step=1000,
         label_visibility="collapsed"
     )
@@ -130,10 +130,11 @@ Rol: Ești un analist de conținut expert.
 Context: Aceasta este partea {part} din {total} a transcriptului.
 
 Sarcina:
-1. Analizează textul (tradu în {lang} dacă e cazul).
-2. Extrage ideile principale, cifrele și argumentele.
+1. Tradu transcriptul in limba romana si restructureaza-l 
+1. Analizează textul
+2. Extrage ideile principale și argumentele.
 3. Ignoră introducerile și reclamele.
-4. Formatează cu Titluri și Bullet Points.
+4. Formatează cu Titluri și Paragrafe (nu multe bullet points)
 
 Transcript:
 --------------------------------------------------
