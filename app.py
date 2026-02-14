@@ -131,7 +131,6 @@ Context: Aceasta este partea {part} din {total} a transcriptului.
 
 Sarcina:
 1. Tradu transcriptul in limba romana si restructureaza-l 
-1. Analizează textul
 2. Extrage ideile principale și argumentele.
 3. Ignoră introducerile și reclamele.
 4. Formatează cu Titluri și Paragrafe (nu multe bullet points)
