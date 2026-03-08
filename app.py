@@ -5,72 +5,71 @@ import glob
 import math
 import re
 
-# --- 1. CONFIGURARE PAGINĂ & DARK MODE FORȚAT ---
-st.set_page_config(page_title="Dark Transcript", page_icon="☕", layout="centered")
+# --- 1. SETĂRI PAGINĂ (ULTRA MINIMALIST) ---
+st.set_page_config(page_title="Auto Transcript", page_icon="⚡", layout="centered")
 
-# CSS Minimalist, Ultra-Rapid și Complet Negru
 st.markdown("""
     <style>
-        /* Ascundem meniul Streamlit pentru un aspect de aplicație curată */
+        /* Ascundem tot ce ține de Streamlit (Meniu, Footer, Header alb) */
         #MainMenu {visibility: hidden;}
         footer {visibility: hidden;}
         header {visibility: hidden;}
         
-        /* Tema True Black */
-        .stApp {
-            background-color: #000000;
-            color: #E0E0E0;
-        }
+        /* Fundal Complet Negru */
+        .stApp { background-color: #000000; color: #FFFFFF; }
         
-        /* Accente de culoare */
-        h1, h2, h3, h4 { color: #D4A373 !important; font-weight: 400 !important; }
-        
-        /* Căsuțe de input mai elegante */
+        /* Căsuța de Input (Mare și centrală) */
         .stTextInput > div > div > input {
             background-color: #111111;
-            color: #FFF;
-            border: 1px solid #333;
-            border-radius: 8px;
-            padding: 15px;
-            font-size: 16px;
+            color: #FFFFFF;
+            border: 2px solid #333333;
+            border-radius: 12px;
+            padding: 18px;
+            font-size: 18px;
+            transition: 0.3s;
         }
         .stTextInput > div > div > input:focus {
-            border-color: #D4A373;
+            border-color: #BC6C25; /* Portocaliu la focus */
             box-shadow: none;
         }
         
-        /* Selectoare și Slidere */
-        .stSelectbox > div > div > div { background-color: #111111; color: #FFF; border: 1px solid #333; }
+        /* Design Tab-uri (fără scroll, ca niște butoane sus) */
+        .stTabs [data-baseweb="tab-list"] { gap: 10px; }
+        .stTabs [data-baseweb="tab"] {
+            background-color: #1A1A1A;
+            border-radius: 6px;
+            padding: 10px 20px;
+            border: 1px solid #333;
+        }
+        .stTabs [aria-selected="true"] {
+            background-color: #BC6C25 !important;
+            color: #fff !important;
+            border-color: #BC6C25 !important;
+        }
         
-        /* Cod blocks (pentru butonul de copy) */
+        /* Zona de cod (de unde copiezi) */
         .stCode {
-            background-color: #111111 !important;
+            background-color: #0A0A0A !important;
             border: 1px solid #333 !important;
-            border-left: 3px solid #BC6C25 !important;
             border-radius: 8px;
         }
     </style>
 """, unsafe_allow_html=True)
 
-# --- 2. HEADER ---
-st.title("☕ Dark Roast Transcript")
-st.caption("⚡ Paste la link și apasă Enter. Totul se întâmplă automat.")
-
-# --- 3. FUNCȚIE CACHED PENTRU VITEZĂ MAXIMĂ ---
-# Dacă schimbi setările, nu mai descarcă de pe net, folosește memoria RAM!
-@st.cache_data(show_spinner=False)
-def extrage_transcript(url, lang_code):
+# --- 2. LOGICĂ DESCĂRCARE (FĂRĂ CACHE PT SIMPLITATE) ---
+def extrage_transcript(url):
+    # Setat să caute automat subtitrări în EN sau RO
     options = {
         'skip_download': True,
         'writeautomaticsub': True,
         'writesubtitles': True,
-        'subtitleslangs': [lang_code],
+        'subtitleslangs': ['en', 'ro'], 
         'outtmpl': 'temp_stream',
         'quiet': True,
         'no_warnings': True
     }
     
-    # Curățare preventivă
+    # Curățare fișiere vechi
     for f in glob.glob("temp_stream*"): 
         try: os.remove(f)
         except: pass
@@ -79,75 +78,62 @@ def extrage_transcript(url, lang_code):
         ydl.download([url])
 
     files = glob.glob("temp_stream*.vtt")
-    if not files:
-        return None
+    if not files: return None
 
     filename = files[0]
     with open(filename, 'r', encoding='utf-8') as f:
         lines = f.readlines()
         
-    # Procesare ultra-rapidă text
     seen = set()
-    full_text_list = []
+    full_text = []
     for line in lines:
         line = line.strip()
         if not line or "-->" in line or line == "WEBVTT": continue
         if line.startswith("<") and line.endswith(">"): continue
-        if "<" in line and ">" in line:
-            line = re.sub(r'<[^>]+>', '', line)
+        if "<" in line and ">" in line: line = re.sub(r'<[^>]+>', '', line)
         if line not in seen:
             seen.add(line)
-            full_text_list.append(line)
+            full_text.append(line)
 
     try: os.remove(filename)
     except: pass
 
-    return " ".join(full_text_list)
+    return " ".join(full_text)
 
-# --- 4. CONTROALE & INPUT ---
-col1, col2 = st.columns([1, 2])
-with col1:
-    lang_options = {"🇬🇧 EN": "en", "🇷🇴 RO": "ro", "🇫🇷 FR": "fr", "🇪🇸 ES": "es", "🇩🇪 DE": "de"}
-    selected_lang = st.selectbox("Limbă", list(lang_options.keys()), index=0, label_visibility="collapsed")
-    lang_code = lang_options[selected_lang]
+# --- 3. INTERFAȚA UTILIZATORULUI ---
+st.markdown("<h1 style='text-align: center; color: #D4A373; margin-top: 20px;'>⚡ Paste & Copy</h1>", unsafe_allow_html=True)
 
-with col2:
-    CHUNK_SIZE = st.slider("Mărime (Caractere)", 2000, 30000, 15000, 1000, label_visibility="collapsed")
-
-# Input URL care declanșează automat procesul
-url = st.text_input("Link YouTube", label_visibility="collapsed", placeholder="Paste aici linkul de YouTube și apasă Enter...")
-
-# --- 5. LOGICA DE PROCESARE (AUTO-RUN) ---
-PROMPT_INTRO = """Rol: Ești un analist de conținut expert.
-Sarcina: Tradu și restructurează acest transcript. Extrage ideile principale, ignoră reclamele și formatează cu Titluri/Paragrafe.
-Partea: {part} din {total}
---------------------------------------------------
-"""
+# Singurul element cu care interacționezi
+url = st.text_input("", placeholder="🔗 Paste Link-ul de YouTube aici și apasă ENTER...", label_visibility="collapsed")
 
 if url:
-    with st.spinner("☕ Se prepară transcriptul..."):
+    with st.spinner("Se procesează instant..."):
         try:
-            text_rezultat = extrage_transcript(url, lang_code)
+            text = extrage_transcript(url)
             
-            if text_rezultat and len(text_rezultat) > 50:
-                num_chunks = math.ceil(len(text_rezultat) / CHUNK_SIZE)
+            if text and len(text) > 50:
+                # Tăiere automată la mărimea ideală pt AI
+                CHUNK_SIZE = 15000 
+                num_chunks = math.ceil(len(text) / CHUNK_SIZE)
                 
-                st.success(f"✅ Descărcat! Împărțit în **{num_chunks}** secțiuni.")
+                PROMPT = "Rol: Ești analist de conținut.\nSarcina: Tradu în limba română, extrage ideile principale, ignoră reclamele. Formatează clar.\nPartea: {part} din {total}\n--------------------------------------------------\n"
                 
-                # Afișare directă, FĂRĂ tab-uri (expander). 
-                # Dai scroll și copiezi din butonul nativ colț-dreapta.
-                for i in range(num_chunks):
-                    start = i * CHUNK_SIZE
-                    end = start + CHUNK_SIZE
-                    chunk_text = text_rezultat[start:end]
-                    
-                    header = PROMPT_INTRO.format(part=i+1, total=num_chunks)
-                    
-                    st.markdown(f"**Partea {i+1} / {num_chunks}**")
-                    st.code(header + chunk_text, language="text")
-                    
+                # CREARE TAB-URI (Aici se elimină complet scroll-ul!)
+                tab_titles = [f"📋 Partea {i+1}" for i in range(num_chunks)]
+                tabs = st.tabs(tab_titles)
+                
+                for i, tab in enumerate(tabs):
+                    with tab:
+                        start = i * CHUNK_SIZE
+                        end = start + CHUNK_SIZE
+                        chunk_text = text[start:end]
+                        
+                        header = PROMPT.format(part=i+1, total=num_chunks)
+                        # Textul apare gata de copiat cu iconița în dreapta sus
+                        st.code(header + chunk_text, language="text")
+                        
             else:
-                st.error("❌ Nu am găsit subtitrări sau fișierul este gol.")
+                st.error("❌ Nu am putut găsi subtitrări pe acest videoclip.")
                 
         except Exception as e:
-            st.error(f"Eroare: {str(e)}")
+            st.error("A apărut o eroare. Verifică link-ul.")
