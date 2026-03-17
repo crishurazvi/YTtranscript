@@ -126,7 +126,7 @@ Elimină zgomotul: Ignoră introducerile repetitive, glumele de umplutură, recl
 Păstrează detaliile: Nu rezuma drastic. Păstrează explicațiile logice, exemplele concrete și datele specifice.
 Formatare vizuală (Crucial):
 Folosește Titluri (H2) pentru temele majore și Subtitluri (H3) pentru pași sau concepte secundare.
-Folosește Bullet points pentru liste de idei.
+Nu folosi Bullet points decat in situatii extreme si rare de enumerare
 Folosește Bold pentru termeni cheie, cifre sau concluzii vitale în interiorul frazelor.
 Folosește > Blocuri de citat pentru definiții sau „Aha! moments” (idei memorabile).
 Structura secțiunii:
