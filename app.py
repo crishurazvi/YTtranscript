@@ -112,15 +112,15 @@ with col1:
     lang_code = lang_options[selected_lang]
 
 with col2:
-    CHUNK_SIZE = st.slider("Mărime (Caractere)", 2000, 30000, 15000, 1000, label_visibility="collapsed")
+    CHUNK_SIZE = st.slider("Caractere", 2000, 30000, 15000, 1000, label_visibility="collapsed")
 
 # Input URL care declanșează automat procesul
 url = st.text_input("Link YouTube", label_visibility="collapsed", placeholder="Paste + Enter...")
 
 # --- 5. LOGICA DE PROCESARE (AUTO-RUN) ---
 PROMPT_INTRO = """
-Rol: Ești un Expert în Arhitectura Informației și Învățare Accelerată.
-Sarcina: Tradu în limba română și restructurează transcriptul de mai jos (Partea {part}/{total}). .
+Rol: Ești un Expert în analiză de conținut , Arhitectura Informației și citire ultra Accelerată.
+Sarcina: Tradu în limba română și structurează transcriptul de mai jos pt o citire rapida (Partea {part}/{total}). .
 Limbaj: Română naturală, profesională, dar accesibilă.
 Transcript de procesat:
 Partea: {part} din {total}
