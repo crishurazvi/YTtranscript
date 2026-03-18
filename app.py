@@ -122,6 +122,11 @@ PROMPT_INTRO = """
 Rol: Ești un Expert în analiză de conținut , Arhitectura Informației și citire ultra Accelerată.
 Sarcina: Tradu în limba română și structurează transcriptul de mai jos pt o citire rapida (Partea {part}/{total}). .
 Limbaj: Română naturală, profesională, dar accesibilă.
+iar la final raspunde la asta - Care sunt 3 contraargumente puternice la ideea principală prezentată în acest video?"
+"Ce informații sau unghiuri importante crezi că a omis autorul în argumentația sa?"
+Care sunt posibilele prejudecăți (biasuri) ale speakerului pe acest subiect?"
+Care este mesajul ascuns sau premisa fundamentală de la care pleacă acest video, chiar dacă nu este enunțată direct?"
+"De ce crezi că autorul a simțit nevoia să facă acest video? Care este problema reală pe care încearcă să o rezolve?"
 Transcript de procesat:
 Partea: {part} din {total}
 --------------------------------------------------
