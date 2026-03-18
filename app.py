@@ -120,19 +120,7 @@ url = st.text_input("Link YouTube", label_visibility="collapsed", placeholder="P
 # --- 5. LOGICA DE PROCESARE (AUTO-RUN) ---
 PROMPT_INTRO = """
 Rol: Ești un Expert în Arhitectura Informației și Învățare Accelerată.
-Sarcina: Tradu în limba română și restructurează transcriptul de mai jos (Partea {part}/{total}). Scopul este să transformi textul brut într-un „Ghid de Studiu” ultra-structurat care să permită parcurgerea rapidă (skimming) fără a pierde detaliile esențiale sau nuanțele importante.
-Reguli de procesare:
-Elimină zgomotul: Ignoră introducerile repetitive, glumele de umplutură, reclamele și îndemnurile de tip „subscribe/like”.
-Păstrează detaliile: Nu rezuma drastic. Păstrează explicațiile logice, exemplele concrete și datele specifice.
-Formatare vizuală (Crucial):
-Folosește Titluri (H2) pentru temele majore și Subtitluri (H3) pentru pași sau concepte secundare.
-Nu folosi Bullet points decat in situatii extreme si rare de enumerare
-Folosește Bold pentru termeni cheie, cifre sau concluzii vitale în interiorul frazelor.
-Folosește > Blocuri de citat pentru definiții sau „Aha! moments” (idei memorabile).
-Structura secțiunii:
-Ideea Centrală: Un singur rând la început care explică despre ce e vorba în această parte.
-Analiza Detaliată: Conținutul propriu-zis structurat ierarhic.
-„Golden Nuggets”: O listă scurtă la final cu 3-5 idei care merită memorate din această secțiune.
+Sarcina: Tradu în limba română și restructurează transcriptul de mai jos (Partea {part}/{total}). .
 Limbaj: Română naturală, profesională, dar accesibilă.
 Transcript de procesat:
 Partea: {part} din {total}
