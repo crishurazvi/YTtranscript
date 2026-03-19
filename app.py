@@ -119,10 +119,10 @@ url = st.text_input("Link YouTube", label_visibility="collapsed", placeholder="P
 
 # --- 5. LOGICA DE PROCESARE (AUTO-RUN) ---
 PROMPT_INTRO = """
-Rol: Ești un Expert în analiză de conținut.
-Sarcina: Tradu în limba română și structurează informatia. nu folosi bullet points decat la enumerari.
-Nu rezuma!
-        (Partea {part}/{total}). .
+Rol: Ești un Expert în analiză de conținut video youtube.
+Sarcina: Tradu în limba română și restructurează informatia , formatare markdown intensă + emoji. fara rezumare excessive. nu folosi excesiv bullet points decat la enumerari.
+        (Partea {part}/{total}). 
+        scopul este ca să parcurg informația în loc să mă uit la video
 
 Transcript de procesat:
 --------------------------------------------------
