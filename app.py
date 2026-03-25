@@ -42,11 +42,30 @@ st.markdown("""
         /* Selectoare și Slidere */
         .stSelectbox > div > div > div { background-color: #111111; color: #FFF; border: 1px solid #333; }
         
+        /* Text Area pentru Prompt */
+        .stTextArea > div > div > textarea {
+            background-color: #111111;
+            color: #FFF;
+            border: 1px solid #333;
+            border-radius: 8px;
+        }
+        .stTextArea > div > div > textarea:focus {
+            border-color: #D4A373;
+            box-shadow: none;
+        }
+        
         /* Cod blocks (pentru butonul de copy) */
         .stCode {
             background-color: #111111 !important;
             border: 1px solid #333 !important;
             border-left: 3px solid #BC6C25 !important;
+            border-radius: 8px;
+        }
+        
+        /* Expander stilizat */
+        .streamlit-expanderHeader {
+            background-color: #0a0a0a !important;
+            color: #D4A373 !important;
             border-radius: 8px;
         }
     </style>
@@ -57,7 +76,6 @@ st.title("☕ Dark Roast Transcript")
 st.caption("⚡ Paste + Enter")
 
 # --- 3. FUNCȚIE CACHED PENTRU VITEZĂ MAXIMĂ ---
-# Dacă schimbi setările, nu mai descarcă de pe net, folosește memoria RAM!
 @st.cache_data(show_spinner=False)
 def extrage_transcript(url, lang_code):
     options = {
@@ -114,22 +132,27 @@ with col1:
 with col2:
     CHUNK_SIZE = st.slider("Caractere", 2000, 30000, 15000, 1000, label_visibility="collapsed")
 
-# Input URL care declanșează automat procesul
-url = st.text_input("Link YouTube", label_visibility="collapsed", placeholder="Paste + Enter...")
-
-# --- 5. LOGICA DE PROCESARE (AUTO-RUN) ---
-PROMPT_INTRO = """
-Rol: Ești un Expert în analiză de conținut video youtube.
+# Expander pentru Prompt-ul AI - ascuns implicit pentru a nu aglomera interfața
+with st.expander("⚙️ Modifică Promptul AI"):
+    default_prompt = """Rol: Ești un Expert în analiză de conținut video youtube.
 Sarcina: Tradu în limba română și restructurează informatia ca un articol web usor de citit, formatare markdown + emoji. 
 fara rezumare excessive. 
 NU folosi excesiv bullet points 
-        (Partea {part}/{total}). 
-        scopul este ca să parcurg informația citind în loc să mă uit la video
+(Partea {part}/{total}). 
+scopul este ca să parcurg informația citind în loc să mă uit la video
 
 Transcript de procesat:
 --------------------------------------------------
 """
+    custom_prompt = st.text_area("Editează instrucțiunile (folosește {part} și {total} pentru numerotare):", 
+                                 value=default_prompt, 
+                                 height=200, 
+                                 label_visibility="collapsed")
 
+# Input URL care declanșează automat procesul
+url = st.text_input("Link YouTube", label_visibility="collapsed", placeholder="Paste + Enter...")
+
+# --- 5. LOGICA DE PROCESARE (AUTO-RUN) ---
 if url:
     with st.spinner("☕ Se prepară transcriptul..."):
         try:
@@ -141,13 +164,18 @@ if url:
                 st.success(f"✅ Descărcat! Împărțit în **{num_chunks}** secțiuni.")
                 
                 # Afișare directă, FĂRĂ tab-uri (expander). 
-                # Dai scroll și copiezi din butonul nativ colț-dreapta.
                 for i in range(num_chunks):
                     start = i * CHUNK_SIZE
                     end = start + CHUNK_SIZE
                     chunk_text = text_rezultat[start:end]
                     
-                    header = PROMPT_INTRO.format(part=i+1, total=num_chunks)
+                    # Generare Header cu fallback în caz că utilizatorul șterge {part} sau {total} sau pune alte acolade
+                    try:
+                        header = custom_prompt.format(part=i+1, total=num_chunks)
+                    except KeyError:
+                        header = custom_prompt + f"\n\n(Partea {i+1} / {num_chunks})\n--------------------------------------------------\n"
+                    except ValueError:
+                        header = custom_prompt + f"\n\n(Partea {i+1} / {num_chunks})\n--------------------------------------------------\n"
                     
                     st.markdown(f"**Partea {i+1} / {num_chunks}**")
                     st.code(header + chunk_text, language="text")
@@ -157,3 +185,4 @@ if url:
                 
         except Exception as e:
             st.error(f"Eroare: {str(e)}")
+            
