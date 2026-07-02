@@ -30,7 +30,7 @@ import yt_dlp
 # ============================================================
 
 APP_TITLE = "☕ Dark Roast Scholar"
-APP_SUBTITLE = "Lipește un link YouTube → primești prompturi gata de copiat în AI, pentru un rezumat scurt și util."
+APP_SUBTITLE = ""
 
 MAJOR_LANGS = ["en", "fr", "ro", "es", "de", "it"]
 
@@ -705,7 +705,7 @@ if submitted:
     st.session_state.pop("result", None)
 
     if not url.strip():
-        st.warning("Lipește mai întâi un link YouTube.")
+        st.warning("Lipește mai întâi un link")
     elif not looks_like_youtube_url(url):
         st.error("Acesta nu pare a fi un link YouTube valid. Exemplu: https://www.youtube.com/watch?v=...")
     else:
@@ -806,7 +806,7 @@ if video_state:
         c2.metric("Tokens (estimat)", f"{estimate_tokens(transcript):,}")
         c3.metric("Fragmente", len(chunks))
 
-        with st.expander("📄 Transcriptul curat (previzualizare)"):
+        with st.expander("📄 Transcriptul curat"):
             st.text_area(
                 "Transcript",
                 value=transcript,
@@ -816,9 +816,7 @@ if video_state:
 
         st.markdown("## ✂️ Copiază prompturile")
         st.caption(
-            "Apasă un buton ca să copiezi promptul complet în clipboard, "
-            "apoi lipește-l în ChatGPT, Claude sau Gemini. "
-            "Fiecare prompt este independent."
+            "Copy"
         )
 
         items = list(enumerate(prompts, start=1))
@@ -869,6 +867,6 @@ if video_state:
 
 st.markdown(
     '<p style="text-align:center;color:#5C5245;font-size:0.8rem;margin-top:3rem">'
-    "Dark Roast Scholar · fără API keys · fără login · datele rămân la tine</p>",
+    "</p>",
     unsafe_allow_html=True,
 )
