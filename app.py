@@ -679,22 +679,22 @@ with st.sidebar:
 # MAIN UI
 # ============================================================
 
-st.markdown('<div class="drs-eyebrow">transcript · curățare · prompturi</div>', unsafe_allow_html=True)
-st.markdown(f'<h1 class="drs-title">{APP_TITLE}</h1>', unsafe_allow_html=True)
+st.markdown('<div class="drs-eyebrow"></div>', unsafe_allow_html=True)
+st.markdown(f'<h2 class="drs-title">{APP_TITLE}</h2>', unsafe_allow_html=True)
 st.markdown(f'<p class="drs-sub">{APP_SUBTITLE}</p>', unsafe_allow_html=True)
 st.markdown('<div class="drs-rule"></div>', unsafe_allow_html=True)
 
 with st.form("url_form", clear_on_submit=False):
     url = st.text_input(
-        "Link YouTube",
-        placeholder="https://www.youtube.com/watch?v=...",
+        "Link ",
+        placeholder="https..",
         label_visibility="collapsed",
     )
     submitted = st.form_submit_button("☕ Extrage transcriptul")
 
 with st.expander("⚙️ Setări avansate (opțional)"):
-    chunk_size = st.slider("Dimensiune fragment (caractere)", 6000, 20000, DEFAULT_CHUNK_SIZE, 1000)
-    overlap = st.slider("Suprapunere între fragmente (caractere)", 0, 800, DEFAULT_OVERLAP, 50)
+    chunk_size = st.slider("Dimens.", 6000, 20000, DEFAULT_CHUNK_SIZE, 1000)
+    overlap = st.slider("Suprapunere", 0, 800, DEFAULT_OVERLAP, 50)
     prompt_template = st.text_area(
         "Prompt (folosește {part} și {total})",
         value=DEFAULT_PROMPT,
