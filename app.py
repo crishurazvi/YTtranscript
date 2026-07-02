@@ -46,7 +46,7 @@ DB_PATH = DATA_DIR / "history.sqlite"
 
 DEFAULT_PROMPT = """Rol: Ești un asistent expert în extragerea ideilor importante din transcripturi video.
 
-Sarcină: Analizează următorul fragment de transcript și extrage doar informațiile importante.
+Sarcină: Analizează următorul fragment de transcript și extrage informațiile importante.
 
 Vreau un rezumat scurt, clar și util, în limba română.
 
@@ -54,15 +54,6 @@ Nu traduce fidel fiecare frază.
 Nu face articol lung.
 Nu inventa informații care nu apar în transcript.
 Elimină repetițiile, exemplele inutile și umplutura verbală.
-Păstrează doar ideile, explicațiile, concluziile și detaliile cu valoare reală.
-
-Format de ieșire dorit:
-
-- Rezumat scurt al fragmentului
-- Idei-cheie
-- Concepte importante
-- Ce merită reținut
-- Eventuale întrebări sau puncte neclare, dacă există
 
 Acesta este fragmentul {part}/{total}:
 
