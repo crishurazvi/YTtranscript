@@ -11,6 +11,7 @@ No API keys, no login, no external databases. Optional local SQLite history.
 
 import html
 import io
+import json
 import os
 import re
 import sqlite3
@@ -20,6 +21,7 @@ from datetime import datetime
 from pathlib import Path
 
 import streamlit as st
+import streamlit.components.v1 as components
 import yt_dlp
 
 
@@ -286,6 +288,48 @@ def sanitize_filename(name):
 
 def estimate_tokens(text):
     return max(1, int(len(text) / 4))
+
+
+def copy_button(text, label):
+    """One-click copy-to-clipboard button (no prompt preview)."""
+    payload = json.dumps(text).replace("</", "<\\/")
+    components.html(f"""
+        <style>
+            body {{ margin: 0; }}
+            .copy-btn {{
+                width: 100%; padding: 11px 0;
+                background: linear-gradient(180deg, #C87B33, #A65E1F);
+                color: #17110A; border: none; border-radius: 10px;
+                font-weight: 600; font-size: 14px;
+                font-family: "Source Sans Pro", sans-serif; cursor: pointer;
+            }}
+            .copy-btn:hover {{ background: linear-gradient(180deg, #D68A3E, #B4682A); }}
+            .copy-btn.done {{ background: #2E4B2E; color: #C9E3C9; }}
+        </style>
+        <button class="copy-btn" onclick="copyText(this)">{label}</button>
+        <script>
+            const TEXT = {payload};
+            function fallbackCopy() {{
+                const ta = document.createElement("textarea");
+                ta.value = TEXT;
+                document.body.appendChild(ta);
+                ta.select();
+                document.execCommand("copy");
+                document.body.removeChild(ta);
+            }}
+            function copyText(btn) {{
+                if (navigator.clipboard && navigator.clipboard.writeText) {{
+                    navigator.clipboard.writeText(TEXT).catch(fallbackCopy);
+                }} else {{ fallbackCopy(); }}
+                btn.innerText = "\\u2714 Copiat";
+                btn.classList.add("done");
+                setTimeout(() => {{
+                    btn.innerText = "{label}";
+                    btn.classList.remove("done");
+                }}, 1600);
+            }}
+        </script>
+    """, height=48)
 
 
 def clean_text_basic(text):
@@ -779,22 +823,19 @@ if video_state:
                 label_visibility="collapsed",
             )
 
-        st.markdown("## ✂️ Prompturi gata de copiat")
+        st.markdown("## ✂️ Copiază prompturile")
         st.caption(
-            "Copiază fiecare fragment (butonul de copiere apare în colțul blocului) "
-            "și lipește-l în ChatGPT, Claude sau Gemini. Fiecare prompt este independent."
+            "Apasă un buton ca să copiezi promptul complet în clipboard, "
+            "apoi lipește-l în ChatGPT, Claude sau Gemini. "
+            "Fiecare prompt este independent."
         )
 
-        for idx, prompt in enumerate(prompts, start=1):
-            st.markdown(
-                f"""<div class="drs-card">
-                      <div class="t">Fragmentul {idx}/{len(prompts)}</div>
-                      <div class="m">{html.escape(info.get("title") or "")} · subtitrare: {html.escape(chosen_label)}
-                      · ~{estimate_tokens(prompt):,} tokens</div>
-                    </div>""",
-                unsafe_allow_html=True,
-            )
-            st.code(prompt, language=None, wrap_lines=True)
+        items = list(enumerate(prompts, start=1))
+        for start in range(0, len(items), 3):
+            cols = st.columns(3)
+            for col, (idx, prompt) in zip(cols, items[start:start + 3]):
+                with col:
+                    copy_button(prompt, f"📋 Fragment {idx}/{len(items)}")
 
         # ---- export ----
         st.markdown("## ⬇️ Export")
