@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: dark-roast-scholar
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: streamlit run app.py --server.port $PORT --server.address 0.0.0.0 --server.headless true
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.3
+      # Discul pe planul free este efemer — istoricul local se pierde oricum
+      # la fiecare redeploy. Setează 1 ca să dezactivezi complet istoricul.
+      - key: DRS_DISABLE_HISTORY
+        value: "1"

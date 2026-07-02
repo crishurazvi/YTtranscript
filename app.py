@@ -1,15 +1,26 @@
-import streamlit as st
-import yt_dlp
+"""
+Dark Roast Scholar — YouTube transcript → AI-ready summary prompts.
+
+Flow: paste a YouTube link → the app picks the best available subtitle
+(manual preferred, original language preferred), cleans it, splits it into
+chunks and wraps each chunk in a summary-oriented prompt ready to paste
+into ChatGPT / Claude / Gemini.
+
+No API keys, no login, no external databases. Optional local SQLite history.
+"""
+
+import html
+import io
 import os
 import re
-import math
 import sqlite3
 import tempfile
 import zipfile
-import io
-import html
-from pathlib import Path
 from datetime import datetime
+from pathlib import Path
+
+import streamlit as st
+import yt_dlp
 
 
 # ============================================================
@@ -17,251 +28,252 @@ from datetime import datetime
 # ============================================================
 
 APP_TITLE = "☕ Dark Roast Scholar"
-APP_SUBTITLE = "YouTube transcript → clean text → AI-ready chunks → export"
+APP_SUBTITLE = "Lipește un link YouTube → primești prompturi gata de copiat în AI, pentru un rezumat scurt și util."
 
-DATA_DIR = Path("dark_roast_data")
-TRANSCRIPTS_DIR = DATA_DIR / "transcripts"
+MAJOR_LANGS = ["en", "fr", "ro", "es", "de", "it"]
+
+DEFAULT_CHUNK_SIZE = 12000
+DEFAULT_OVERLAP = 400
+
+# History can be disabled entirely (useful on Render, where the disk is
+# ephemeral and history is lost on every redeploy anyway).
+HISTORY_ENABLED = os.environ.get("DRS_DISABLE_HISTORY", "0") != "1"
+
+DATA_DIR = Path(os.environ.get("DRS_DATA_DIR", "dark_roast_data"))
 DB_PATH = DATA_DIR / "history.sqlite"
 
-DATA_DIR.mkdir(exist_ok=True)
-TRANSCRIPTS_DIR.mkdir(exist_ok=True)
+DEFAULT_PROMPT = """Rol: Ești un asistent expert în extragerea ideilor importante din transcripturi video.
+
+Sarcină: Analizează următorul fragment de transcript și extrage doar informațiile importante.
+
+Vreau un rezumat scurt, clar și util, în limba română.
+
+Nu traduce fidel fiecare frază.
+Nu face articol lung.
+Nu inventa informații care nu apar în transcript.
+Elimină repetițiile, exemplele inutile și umplutura verbală.
+Păstrează doar ideile, explicațiile, concluziile și detaliile cu valoare reală.
+
+Format de ieșire dorit:
+
+- Rezumat scurt al fragmentului
+- Idei-cheie
+- Concepte importante
+- Ce merită reținut
+- Eventuale întrebări sau puncte neclare, dacă există
+
+Acesta este fragmentul {part}/{total}:
+
+"""
 
 
 # ============================================================
-# PAGE
+# PAGE + THEME
 # ============================================================
 
 st.set_page_config(
     page_title="Dark Roast Scholar",
     page_icon="☕",
-    layout="centered"
+    layout="centered",
 )
-
-
-# ============================================================
-# CSS DARK MODE
-# ============================================================
 
 st.markdown("""
 <style>
-    #MainMenu {visibility: hidden;}
-    footer {visibility: hidden;}
-    header {visibility: hidden;}
+    #MainMenu, footer, header {visibility: hidden;}
 
     .stApp {
-        background-color: #000000;
-        color: #E0E0E0;
+        background: radial-gradient(ellipse at top, #16110C 0%, #0C0A08 55%) fixed;
+        color: #E8E2D9;
     }
+
+    .block-container {max-width: 780px; padding-top: 2.5rem;}
 
     h1, h2, h3, h4 {
         color: #D4A373 !important;
         font-weight: 400 !important;
+        letter-spacing: 0.01em;
     }
 
-    .stCaption, caption {
-        color: #A0A0A0 !important;
+    .drs-eyebrow {
+        color: #8A7A64;
+        font-size: 0.78rem;
+        letter-spacing: 0.22em;
+        text-transform: uppercase;
+        text-align: center;
+        margin-bottom: 0.2rem;
+    }
+
+    .drs-title {
+        text-align: center;
+        font-size: 2.3rem;
+        color: #D4A373;
+        margin: 0;
+    }
+
+    .drs-sub {
+        text-align: center;
+        color: #A89C8B;
+        font-size: 0.98rem;
+        max-width: 560px;
+        margin: 0.5rem auto 0.2rem auto;
+        line-height: 1.5;
+    }
+
+    .drs-rule {
+        height: 1px;
+        width: 120px;
+        margin: 1.1rem auto 1.6rem auto;
+        background: linear-gradient(90deg, transparent, #BC6C25, transparent);
     }
 
     .stTextInput > div > div > input {
-        background-color: #111111;
-        color: #FFFFFF;
-        border: 1px solid #333333;
-        border-radius: 8px;
-        padding: 15px;
+        background-color: #14100C;
+        color: #F3EDE3;
+        border: 1px solid #3A3227;
+        border-radius: 10px;
+        padding: 14px 16px;
         font-size: 16px;
     }
-
     .stTextInput > div > div > input:focus {
         border-color: #D4A373;
-        box-shadow: none;
+        box-shadow: 0 0 0 1px #D4A37344;
     }
 
     .stTextArea > div > div > textarea {
-        background-color: #111111;
-        color: #FFFFFF;
-        border: 1px solid #333333;
-        border-radius: 8px;
+        background-color: #14100C;
+        color: #F3EDE3;
+        border: 1px solid #3A3227;
+        border-radius: 10px;
     }
-
     .stTextArea > div > div > textarea:focus {
         border-color: #D4A373;
         box-shadow: none;
     }
 
-    .stSelectbox > div > div > div {
-        background-color: #111111;
-        color: #FFFFFF;
-        border: 1px solid #333333;
-    }
-
-    .stCode {
-        background-color: #111111 !important;
-        border: 1px solid #333333 !important;
-        border-left: 3px solid #BC6C25 !important;
-        border-radius: 8px;
-    }
-
-    .streamlit-expanderHeader {
-        background-color: #0A0A0A !important;
-        color: #D4A373 !important;
-        border-radius: 8px;
-    }
-
-    div[data-testid="stMetric"] {
-        background-color: #0A0A0A;
-        border: 1px solid #222222;
-        padding: 12px;
+    .stSelectbox > div > div {
+        background-color: #14100C;
+        color: #F3EDE3;
+        border: 1px solid #3A3227;
         border-radius: 10px;
     }
 
-    .video-card {
-        background-color: #080808;
-        border: 1px solid #222222;
+    .stButton > button, .stDownloadButton > button, .stFormSubmitButton > button {
+        background: linear-gradient(180deg, #C87B33, #A65E1F);
+        color: #17110A;
+        border: none;
+        border-radius: 10px;
+        padding: 0.65rem 1.4rem;
+        font-weight: 600;
+        width: 100%;
+    }
+    .stButton > button:hover, .stDownloadButton > button:hover, .stFormSubmitButton > button:hover {
+        background: linear-gradient(180deg, #D68A3E, #B4682A);
+        color: #17110A;
+    }
+
+    .stCode, div[data-testid="stCode"] pre {
+        background-color: #100D0A !important;
+        border: 1px solid #2E2820 !important;
+        border-left: 3px solid #BC6C25 !important;
+        border-radius: 10px;
+    }
+
+    div[data-testid="stMetric"] {
+        background-color: #120E0B;
+        border: 1px solid #2C251D;
+        padding: 12px;
+        border-radius: 12px;
+    }
+    div[data-testid="stMetric"] label {color: #A89C8B !important;}
+    div[data-testid="stMetricValue"] {color: #D4A373 !important;}
+
+    .drs-card {
+        background-color: #110D0A;
+        border: 1px solid #2C251D;
         border-radius: 14px;
-        padding: 14px;
-        margin-bottom: 14px;
+        padding: 16px 18px;
+        margin: 10px 0 4px 0;
+    }
+    .drs-card .t {color: #D4A373; font-size: 1.05rem;}
+    .drs-card .m {color: #A89C8B; font-size: 0.88rem; margin-top: 2px;}
+
+    .streamlit-expanderHeader, details summary {
+        color: #C8B89E !important;
     }
 
-    .small-muted {
-        color: #999999;
-        font-size: 0.9rem;
-    }
-
-    .gold {
-        color: #D4A373;
-    }
+    .stAlert {border-radius: 10px;}
 </style>
 """, unsafe_allow_html=True)
 
 
 # ============================================================
-# DATABASE
+# LOCAL HISTORY (optional, best-effort — never crashes the app)
 # ============================================================
 
+def _db():
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
 def init_db():
-    conn = sqlite3.connect(DB_PATH)
-    cur = conn.cursor()
-
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS history (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            created_at TEXT NOT NULL,
-            source_type TEXT NOT NULL,
-            url TEXT,
-            video_id TEXT,
-            title TEXT,
-            channel TEXT,
-            language TEXT,
-            transcript_path TEXT,
-            markdown_path TEXT,
-            char_count INTEGER,
-            chunk_count INTEGER,
-            prompt_mode TEXT
-        )
-    """)
-
-    conn.commit()
-    conn.close()
+    if not HISTORY_ENABLED:
+        return
+    try:
+        with _db() as conn:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS history (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    created_at TEXT NOT NULL,
+                    url TEXT,
+                    video_id TEXT,
+                    title TEXT,
+                    language TEXT,
+                    char_count INTEGER,
+                    chunk_count INTEGER
+                )
+            """)
+    except Exception:
+        pass
 
 
-def save_history(
-    source_type,
-    url,
-    video_id,
-    title,
-    channel,
-    language,
-    transcript_text,
-    markdown_text,
-    char_count,
-    chunk_count,
-    prompt_mode
-):
-    created_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-    safe_id = sanitize_filename(video_id or title or f"upload_{datetime.now().timestamp()}")
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-
-    txt_path = TRANSCRIPTS_DIR / f"{timestamp}_{safe_id}.txt"
-    md_path = TRANSCRIPTS_DIR / f"{timestamp}_{safe_id}.md"
-
-    txt_path.write_text(transcript_text, encoding="utf-8")
-    md_path.write_text(markdown_text, encoding="utf-8")
-
-    conn = sqlite3.connect(DB_PATH)
-    cur = conn.cursor()
-
-    cur.execute("""
-        INSERT INTO history (
-            created_at, source_type, url, video_id, title, channel,
-            language, transcript_path, markdown_path,
-            char_count, chunk_count, prompt_mode
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    """, (
-        created_at,
-        source_type,
-        url,
-        video_id,
-        title,
-        channel,
-        language,
-        str(txt_path),
-        str(md_path),
-        char_count,
-        chunk_count,
-        prompt_mode
-    ))
-
-    conn.commit()
-    conn.close()
+def save_history(url, video_id, title, language, char_count, chunk_count):
+    if not HISTORY_ENABLED:
+        return
+    try:
+        with _db() as conn:
+            conn.execute(
+                """INSERT INTO history
+                   (created_at, url, video_id, title, language, char_count, chunk_count)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    datetime.now().strftime("%Y-%m-%d %H:%M"),
+                    url, video_id, title, language, char_count, chunk_count,
+                ),
+            )
+    except Exception:
+        pass
 
 
-def get_history(limit=25):
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    cur = conn.cursor()
-
-    cur.execute("""
-        SELECT *
-        FROM history
-        ORDER BY id DESC
-        LIMIT ?
-    """, (limit,))
-
-    rows = cur.fetchall()
-    conn.close()
-
-    return rows
-
-
-def find_existing_video(video_id, language):
-    if not video_id:
-        return None
-
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    cur = conn.cursor()
-
-    cur.execute("""
-        SELECT *
-        FROM history
-        WHERE video_id = ? AND language = ?
-        ORDER BY id DESC
-        LIMIT 1
-    """, (video_id, language))
-
-    row = cur.fetchone()
-    conn.close()
-
-    return row
+def get_history(limit=15):
+    if not HISTORY_ENABLED:
+        return []
+    try:
+        with _db() as conn:
+            rows = conn.execute(
+                "SELECT * FROM history ORDER BY id DESC LIMIT ?", (limit,)
+            ).fetchall()
+        return rows
+    except Exception:
+        return []
 
 
 init_db()
 
 
 # ============================================================
-# UTILS
+# TEXT UTILS
 # ============================================================
 
 def sanitize_filename(name):
@@ -269,149 +281,68 @@ def sanitize_filename(name):
         return "transcript"
     name = re.sub(r"[^\w\s.-]", "", name, flags=re.UNICODE)
     name = re.sub(r"\s+", "_", name.strip())
-    return name[:90] or "transcript"
+    return name[:80] or "transcript"
 
 
 def estimate_tokens(text):
-    return int(len(text) / 4)
-
-
-def format_duration(seconds):
-    if not seconds:
-        return "—"
-
-    seconds = int(seconds)
-    h = seconds // 3600
-    m = (seconds % 3600) // 60
-    s = seconds % 60
-
-    if h:
-        return f"{h}h {m}m {s}s"
-    return f"{m}m {s}s"
-
-
-def extract_video_id(info):
-    return info.get("id") or info.get("display_id") or ""
+    return max(1, int(len(text) / 4))
 
 
 def clean_text_basic(text):
     text = html.unescape(text)
-    text = re.sub(r"\r\n", "\n", text)
-    text = re.sub(r"\r", "\n", text)
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
     text = re.sub(r"[ \t]+", " ", text)
     text = re.sub(r"\n{3,}", "\n\n", text)
     return text.strip()
 
 
-def seconds_to_timestamp(seconds):
-    seconds = max(0, int(seconds))
-    h = seconds // 3600
-    m = (seconds % 3600) // 60
-    s = seconds % 60
+def clean_subtitle_file(content):
+    """Clean a VTT/SRT file: drop timestamps, HTML tags, cue numbers and
+    consecutive duplicate lines produced by auto-captions."""
+    if isinstance(content, bytes):
+        content = content.decode("utf-8", errors="ignore")
 
-    if h:
-        return f"{h:02d}:{m:02d}:{s:02d}"
-    return f"{m:02d}:{s:02d}"
-
-
-def parse_vtt_timestamp_to_seconds(ts):
-    ts = ts.strip().replace(",", ".")
-    parts = ts.split(":")
-
-    try:
-        if len(parts) == 3:
-            h = int(parts[0])
-            m = int(parts[1])
-            s = float(parts[2])
-            return h * 3600 + m * 60 + s
-
-        if len(parts) == 2:
-            m = int(parts[0])
-            s = float(parts[1])
-            return m * 60 + s
-    except Exception:
-        return None
-
-    return None
-
-
-def clean_subtitle_file(content, keep_timestamps=False):
-    """
-    Curăță VTT/SRT/TXT.
-    Elimină duplicatele consecutive, nu toate duplicatele globale.
-    """
-
-    content = content.decode("utf-8", errors="ignore") if isinstance(content, bytes) else content
     content = html.unescape(content)
-    lines = content.splitlines()
-
     output = []
-    previous_text = ""
-    current_timestamp = None
+    previous = ""
 
-    for raw_line in lines:
-        line = raw_line.strip()
-
+    for raw in content.splitlines():
+        line = raw.strip()
         if not line:
             continue
 
         upper = line.upper()
-
-        if upper.startswith("WEBVTT"):
+        if upper.startswith(("WEBVTT", "NOTE", "KIND:", "LANGUAGE:", "STYLE")):
+            continue
+        if re.fullmatch(r"\d+", line):          # SRT cue numbers
+            continue
+        if "-->" in line:                        # timestamp lines
             continue
 
-        if upper.startswith("NOTE"):
-            continue
-
-        if re.fullmatch(r"\d+", line):
-            continue
-
-        if "-->" in line:
-            left = line.split("-->")[0].strip()
-            seconds = parse_vtt_timestamp_to_seconds(left)
-            if seconds is not None:
-                current_timestamp = seconds_to_timestamp(seconds)
-            continue
-
-        line = re.sub(r"<[^>]+>", "", line)
-        line = re.sub(r"<\d{2}:\d{2}:\d{2}\.\d{3}>", "", line)
-        line = re.sub(r"<\d{2}:\d{2}\.\d{3}>", "", line)
+        line = re.sub(r"<[^>]+>", "", line)      # HTML/word-timing tags
         line = clean_text_basic(line)
-
         if not line:
             continue
 
-        if line == previous_text:
+        # auto-captions repeat the same rolling line — keep one copy
+        if line == previous:
             continue
-
-        previous_text = line
-
-        if keep_timestamps and current_timestamp:
-            output.append(f"[{current_timestamp}] {line}")
-        else:
-            output.append(line)
+        previous = line
+        output.append(line)
 
     text = " ".join(output)
     text = re.sub(r"\s+", " ", text)
     text = re.sub(r"\s+([,.!?;:])", r"\1", text)
-    text = text.strip()
-
-    return text
+    return text.strip()
 
 
 def split_sentences(text):
     text = clean_text_basic(text)
 
     protected = {
-        "Dr.": "Dr§",
-        "Prof.": "Prof§",
-        "Mr.": "Mr§",
-        "Mrs.": "Mrs§",
-        "e.g.": "eg§",
-        "i.e.": "ie§",
-        "etc.": "etc§",
+        "Dr.": "Dr§", "Prof.": "Prof§", "Mr.": "Mr§", "Mrs.": "Mrs§",
+        "e.g.": "eg§", "i.e.": "ie§", "etc.": "etc§", "vs.": "vs§",
     }
-
     for k, v in protected.items():
         text = text.replace(k, v)
 
@@ -421,871 +352,491 @@ def split_sentences(text):
     for part in parts:
         for k, v in protected.items():
             part = part.replace(v, k)
-        if part.strip():
-            restored.append(part.strip())
-
+        part = part.strip()
+        if part:
+            restored.append(part)
     return restored
 
 
-def chunk_text(text, chunk_size=15000, overlap=500, mode="Pe propoziții"):
+def chunk_text(text, chunk_size=DEFAULT_CHUNK_SIZE, overlap=DEFAULT_OVERLAP):
+    """Sentence-aware chunking with a small overlap between chunks."""
     text = clean_text_basic(text)
-
     if len(text) <= chunk_size:
         return [text]
 
+    sentences = split_sentences(text)
     chunks = []
-
-    if mode == "Pe caractere":
-        start = 0
-        while start < len(text):
-            end = start + chunk_size
-            chunk = text[start:end].strip()
-            if chunk:
-                chunks.append(chunk)
-            start = max(end - overlap, end)
-        return chunks
-
-    if mode == "Pe paragrafe":
-        units = [p.strip() for p in text.split("\n\n") if p.strip()]
-        if len(units) <= 1:
-            units = split_sentences(text)
-    else:
-        units = split_sentences(text)
-
     current = ""
 
-    for unit in units:
-        if not current:
-            current = unit
-            continue
+    for sentence in sentences:
+        # a single sentence longer than the chunk size gets hard-split
+        while len(sentence) > chunk_size:
+            head, sentence = sentence[:chunk_size], sentence[chunk_size:]
+            if current:
+                chunks.append(current.strip())
+                current = ""
+            chunks.append(head.strip())
 
-        if len(current) + len(unit) + 1 <= chunk_size:
-            current += " " + unit
+        if not current:
+            current = sentence
+        elif len(current) + len(sentence) + 1 <= chunk_size:
+            current += " " + sentence
         else:
             chunks.append(current.strip())
-
-            if overlap > 0:
-                overlap_text = current[-overlap:].strip()
-                current = overlap_text + " " + unit
-            else:
-                current = unit
+            tail = current[-overlap:].strip() if overlap > 0 else ""
+            current = (tail + " " + sentence).strip()
 
     if current.strip():
         chunks.append(current.strip())
-
     return chunks
 
 
-def build_markdown_export(
-    title,
-    url,
-    channel,
-    language,
-    transcript,
-    chunks,
-    prompt_mode,
-    prompt_template
-):
-    date_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-    md = []
-    md.append("---")
-    md.append(f'title: "{title or "Untitled"}"')
-    md.append(f'source: "{url or "local upload"}"')
-    md.append(f'channel: "{channel or ""}"')
-    md.append(f'language: "{language or ""}"')
-    md.append(f'date: "{date_str}"')
-    md.append(f'prompt_mode: "{prompt_mode}"')
-    md.append("tags: [youtube, transcript, dark-roast-scholar]")
-    md.append("---\n")
-
-    md.append(f"# {title or 'Transcript'}\n")
-
-    if url:
-        md.append(f"Source: {url}\n")
-
-    if channel:
-        md.append(f"Channel: {channel}\n")
-
-    md.append("## Transcript curat\n")
-    md.append(transcript)
-    md.append("\n\n---\n")
-
-    md.append("## Prompt template\n")
-    md.append("```text")
-    md.append(prompt_template)
-    md.append("```\n")
-
-    md.append("## AI chunks\n")
-
+def build_prompts(chunks, template):
     total = len(chunks)
+    prompts = []
     for idx, chunk in enumerate(chunks, start=1):
         try:
-            header = prompt_template.format(part=idx, total=total)
-        except Exception:
-            header = prompt_template + f"\n\n(Partea {idx}/{total})\n"
+            header = template.format(part=idx, total=total)
+        except (KeyError, IndexError, ValueError):
+            header = template + f"\n(Fragmentul {idx}/{total})\n\n"
+        prompts.append(header + chunk)
+    return prompts
 
-        md.append(f"### Partea {idx}/{total}\n")
+
+def build_markdown_export(title, url, language, transcript, prompts):
+    date_str = datetime.now().strftime("%Y-%m-%d %H:%M")
+    md = [
+        "---",
+        f'title: "{(title or "Untitled").replace(chr(34), "")}"',
+        f'source: "{url or ""}"',
+        f'language: "{language or ""}"',
+        f'date: "{date_str}"',
+        "tags: [youtube, transcript, dark-roast-scholar]",
+        "---",
+        "",
+        f"# {title or 'Transcript'}",
+        "",
+        f"Sursă: {url}" if url else "",
+        "",
+        "## Transcript curat",
+        "",
+        transcript,
+        "",
+        "---",
+        "",
+        "## Prompturi AI (copiază fiecare bloc separat)",
+        "",
+    ]
+    for idx, prompt in enumerate(prompts, start=1):
+        md.append(f"### Fragmentul {idx}/{len(prompts)}")
+        md.append("")
         md.append("```text")
-        md.append(header + chunk)
-        md.append("```\n")
-
+        md.append(prompt)
+        md.append("```")
+        md.append("")
     return "\n".join(md)
 
 
-def build_zip_file(files_dict):
+def build_prompts_txt(prompts):
+    sep = "\n\n" + "=" * 60 + "\n\n"
+    blocks = [
+        f"### FRAGMENTUL {i}/{len(prompts)} ###\n\n{p}"
+        for i, p in enumerate(prompts, start=1)
+    ]
+    return sep.join(blocks)
+
+
+def build_zip(files_dict):
     mem = io.BytesIO()
-    with zipfile.ZipFile(mem, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
+    with zipfile.ZipFile(mem, "w", compression=zipfile.ZIP_DEFLATED) as zf:
         for filename, content in files_dict.items():
             zf.writestr(filename, content)
     mem.seek(0)
-    return mem
+    return mem.getvalue()
 
 
 # ============================================================
-# YOUTUBE FUNCTIONS
+# YOUTUBE
 # ============================================================
 
-@st.cache_data(show_spinner=False)
-def get_youtube_info(url):
+YOUTUBE_URL_RE = re.compile(
+    r"(https?://)?(www\.|m\.|music\.)?"
+    r"(youtube\.com/(watch\?|shorts/|live/|embed/)|youtu\.be/)",
+    re.IGNORECASE,
+)
+
+
+def looks_like_youtube_url(url):
+    return bool(YOUTUBE_URL_RE.search(url.strip()))
+
+
+def friendly_ytdlp_error(err):
+    msg = str(err).lower()
+    if "private" in msg:
+        return "Videoclipul este privat — nu îi pot accesa subtitrările."
+    if "unavailable" in msg or "removed" in msg:
+        return "Videoclipul nu este disponibil (șters, blocat sau restricționat regional)."
+    if "age" in msg and "confirm" in msg:
+        return "Videoclipul are restricție de vârstă și nu poate fi accesat fără autentificare."
+    if "sign in" in msg or "bot" in msg or "captcha" in msg:
+        return ("YouTube a blocat temporar cererea (protecție anti-bot). "
+                "Încearcă din nou peste câteva minute sau rulează aplicația local.")
+    if "unsupported url" in msg or "invalid" in msg:
+        return "Linkul nu pare să fie un videoclip YouTube valid."
+    if "network" in msg or "timed out" in msg or "connection" in msg:
+        return "Conexiunea la YouTube a eșuat. Verifică internetul și reîncearcă."
+    return "Nu am putut procesa acest link. Verifică-l și încearcă din nou."
+
+
+@st.cache_data(show_spinner=False, ttl=3600)
+def get_video_info(url):
     opts = {
         "skip_download": True,
         "quiet": True,
         "no_warnings": True,
-        "extract_flat": False,
-        "ignoreerrors": True,
+        "noplaylist": True,
     }
-
     with yt_dlp.YoutubeDL(opts) as ydl:
         info = ydl.extract_info(url, download=False)
 
-    return info
+    if info and info.get("_type") == "playlist":
+        entries = [e for e in (info.get("entries") or []) if e]
+        if not entries:
+            return None
+        info = entries[0]
+
+    # keep only what the UI needs (also keeps the cache small)
+    return {
+        "id": info.get("id"),
+        "title": info.get("title"),
+        "channel": info.get("channel") or info.get("uploader"),
+        "duration": info.get("duration"),
+        "language": (info.get("language") or "").split("-")[0].lower(),
+        "webpage_url": info.get("webpage_url") or url,
+        "manual_langs": sorted((info.get("subtitles") or {}).keys()),
+        "auto_langs": sorted((info.get("automatic_captions") or {}).keys()),
+    }
 
 
-def collect_subtitle_languages(info):
-    result = {}
+def build_subtitle_options(info):
+    """Return (options, best_key). options: {label: {"lang", "type"}}.
 
-    subtitles = info.get("subtitles") or {}
-    auto = info.get("automatic_captions") or {}
+    Preference order:
+      1. manual subtitle in the video's original language
+      2. manual subtitle in a major language (en, fr, ro, es, de, it)
+      3. any manual subtitle
+      4. auto captions in the original spoken language
+      5. auto captions in a major language
+    """
+    original = info.get("language") or ""
+    manual = info.get("manual_langs") or []
+    auto = info.get("auto_langs") or []
 
-    for lang in sorted(subtitles.keys()):
-        result[f"{lang} - manual"] = {"lang": lang, "type": "manual"}
+    def base(code):
+        return code.split("-")[0].lower()
 
-    for lang in sorted(auto.keys()):
-        if f"{lang} - manual" not in result:
-            result[f"{lang} - auto"] = {"lang": lang, "type": "auto"}
+    options = {}
 
-    return result
+    def add(lang, kind):
+        label = f"{lang} · {'manuală' if kind == 'manual' else 'automată'}"
+        if label not in options:
+            options[label] = {"lang": lang, "type": kind}
+        return label
+
+    ranked = []
+
+    # 1–3: manual subtitles
+    for lang in manual:
+        if original and base(lang) == original:
+            ranked.append((0, add(lang, "manual")))
+        elif base(lang) in MAJOR_LANGS:
+            ranked.append((1, add(lang, "manual")))
+        else:
+            ranked.append((2, add(lang, "manual")))
+
+    # 4: auto captions in the spoken language ("xx-orig" or matching original)
+    for lang in auto:
+        if lang.endswith("-orig") or (original and base(lang) == original):
+            ranked.append((3, add(lang, "auto")))
+
+    # 5: auto captions in major languages (skip the flood of machine
+    #    translations — only major langs are offered)
+    for lang in auto:
+        if lang.endswith("-orig"):
+            continue
+        if base(lang) in MAJOR_LANGS:
+            ranked.append((4, add(lang, "auto")))
+
+    # last resort: any auto caption at all
+    if not ranked and auto:
+        ranked.append((5, add(auto[0], "auto")))
+
+    if not ranked:
+        return {}, None
+
+    ranked.sort(key=lambda t: t[0])
+    return options, ranked[0][1]
 
 
-def flatten_playlist_entries(info):
-    if info.get("_type") == "playlist" and info.get("entries"):
-        return [e for e in info.get("entries") if e]
-
-    if info.get("entries") and not info.get("url"):
-        return [e for e in info.get("entries") if e]
-
-    return [info]
-
-
-def get_entry_url(entry):
-    webpage_url = entry.get("webpage_url")
-    if webpage_url:
-        return webpage_url
-
-    url = entry.get("url")
-    if url and url.startswith("http"):
-        return url
-
-    video_id = entry.get("id")
-    if video_id:
-        return f"https://www.youtube.com/watch?v={video_id}"
-
-    return None
-
-
-@st.cache_data(show_spinner=False)
-def extract_transcript_from_youtube(url, lang_code, keep_timestamps):
+@st.cache_data(show_spinner=False, ttl=3600)
+def download_subtitle(url, lang_code, sub_type):
+    """Download one subtitle track via yt-dlp and return cleaned text."""
     with tempfile.TemporaryDirectory() as tmpdir:
-        outtmpl = os.path.join(tmpdir, "subtitle")
-
         options = {
             "skip_download": True,
-            "writesubtitles": True,
-            "writeautomaticsub": True,
+            "writesubtitles": sub_type == "manual",
+            "writeautomaticsub": sub_type == "auto",
             "subtitleslangs": [lang_code],
             "subtitlesformat": "vtt/srt/best",
-            "outtmpl": outtmpl,
+            "outtmpl": os.path.join(tmpdir, "subtitle.%(ext)s"),
             "quiet": True,
             "no_warnings": True,
-            "ignoreerrors": True,
+            "noplaylist": True,
         }
-
         with yt_dlp.YoutubeDL(options) as ydl:
-            info = ydl.extract_info(url, download=True)
+            ydl.extract_info(url, download=True)
 
-        subtitle_files = []
+        files = []
         for ext in ("vtt", "srt"):
-            subtitle_files.extend(Path(tmpdir).glob(f"subtitle*.{ext}"))
+            files.extend(Path(tmpdir).glob(f"*.{ext}"))
+        if not files:
+            return None
 
-        if not subtitle_files:
-            return None, info
-
-        subtitle_file = subtitle_files[0]
-        content = subtitle_file.read_text(encoding="utf-8", errors="ignore")
-        cleaned = clean_subtitle_file(content, keep_timestamps=keep_timestamps)
-
-        return cleaned, info
+        content = files[0].read_text(encoding="utf-8", errors="ignore")
+        return clean_subtitle_file(content)
 
 
-# ============================================================
-# PROMPTS
-# ============================================================
-
-PROMPT_PRESETS = {
-    "Articol română": """Rol: Ești un expert în analiză de conținut video YouTube.
-Sarcină: Tradu în limba română și restructurează informația ca un articol web ușor de citit.
-Stil: clar, natural, cu titluri și subtitluri.
-Nu face rezumare excesivă.
-Nu folosi excesiv bullet points.
-Păstrează ideile importante și ordinea logică.
-(Partea {part}/{total})
-
-Transcript de procesat:
---------------------------------------------------
-""",
-
-    "Rezumat didactic": """Rol: Ești un profesor foarte bun.
-Sarcină: Explică transcriptul în limba română, didactic, clar, ca pentru cineva care vrea să învețe.
-Obiectiv: transformă informația într-un material de curs.
-Include:
-1. Explicație narativă
-2. Idei-cheie
-3. Concepte importante
-4. Ce trebuie reținut pentru examen
-Nu inventa informații în afara transcriptului.
-(Partea {part}/{total})
-
-Transcript de procesat:
---------------------------------------------------
-""",
-
-    "Curs medical": """Rol: Ești profesor universitar de medicină.
-Sarcină: Transformă transcriptul într-un curs medical clar, structurat și didactic, în limba română.
-Cerințe:
-- păstrează fidelitatea față de transcript
-- explică termenii importanți
-- organizează informația logic
-- nu inventa date care nu apar în transcript
-- formulează ca un capitol de curs, nu ca bullet points interminabile
-La final include:
-1. Mesajele esențiale
-2. Capcane frecvente de examen
-3. Termeni medicali importanți
-(Partea {part}/{total})
-
-Transcript de procesat:
---------------------------------------------------
-""",
-
-    "Traducere fidelă": """Rol: Ești traducător specializat.
-Sarcină: Tradu fidel transcriptul în limba română.
-Păstrează sensul original, tonul și ordinea ideilor.
-Nu rezuma.
-Nu adăuga informații noi.
-Corectează doar formulările incoerente produse de subtitrarea automată.
-(Partea {part}/{total})
-
-Transcript de procesat:
---------------------------------------------------
-""",
-
-    "QCM Anki": """Rol: Ești profesor și creator de întrebări pentru Anki.
-Sarcină: Creează întrebări grilă în limba română pe baza transcriptului.
-Format obligatoriu:
-START
-Basic
-Front: Întrebare...
-A. ...
-B. ...
-C. ...
-D. ...
-E. ...
-Back: Răspuns corect: ...
-Explicații:
-- A: ...
-- B: ...
-- C: ...
-- D: ...
-- E: ...
-Tags: youtube::transcript
-END
-
-Reguli:
-- 5 variante A-E
-- pot exista răspunsuri unice sau multiple
-- distractori plauzibili
-- explicații clare
-- nu inventa informații care nu apar în transcript
-(Partea {part}/{total})
-
-Transcript de procesat:
---------------------------------------------------
-""",
-
-    "Flashcards": """Rol: Ești expert în învățare activă.
-Sarcină: Creează flashcarduri clare în limba română pe baza transcriptului.
-Format:
-START
-Basic
-Front: ...
-Back: ...
-Tags: youtube::flashcards
-END
-
-Reguli:
-- o singură idee per card
-- întrebări scurte
-- răspunsuri clare
-- nu inventa informații care nu apar în transcript
-(Partea {part}/{total})
-
-Transcript de procesat:
---------------------------------------------------
-""",
-
-    "Obsidian note": """Rol: Ești expert în structurarea notițelor în Obsidian.
-Sarcină: Transformă transcriptul într-o notiță Markdown în limba română.
-Include:
-# Titlu
-## Ideea centrală
-## Explicație
-## Concepte-cheie
-## Detalii importante
-## Întrebări de verificare
-## De reținut
-
-Nu inventa informații în afara transcriptului.
-(Partea {part}/{total})
-
-Transcript de procesat:
---------------------------------------------------
-""",
-
-    "Custom": ""
-}
+def format_duration(seconds):
+    if not seconds:
+        return "—"
+    seconds = int(seconds)
+    h, rem = divmod(seconds, 3600)
+    m, s = divmod(rem, 60)
+    return f"{h}h {m}m" if h else f"{m}m {s}s"
 
 
 # ============================================================
-# HEADER
-# ============================================================
-
-st.title(APP_TITLE)
-st.caption(APP_SUBTITLE)
-
-
-# ============================================================
-# SIDEBAR HISTORY
+# SIDEBAR — history
 # ============================================================
 
 with st.sidebar:
-    st.markdown("## 📚 Istoric local")
-
-    rows = get_history(limit=20)
-
-    if not rows:
-        st.caption("Încă nu ai transcripturi salvate.")
+    st.markdown("### 📚 Istoric local")
+    if not HISTORY_ENABLED:
+        st.caption("Istoricul este dezactivat (DRS_DISABLE_HISTORY=1).")
     else:
+        rows = get_history()
+        if not rows:
+            st.caption("Încă nu ai extras niciun transcript.")
         for row in rows:
-            title = row["title"] or "Untitled"
-            created_at = row["created_at"]
-            language = row["language"] or "?"
-            chars = row["char_count"] or 0
-
-            with st.expander(f"{title[:45]}"):
-                st.caption(f"{created_at} · {language} · {chars:,} caractere")
-
-                txt_path = Path(row["transcript_path"])
-                md_path = Path(row["markdown_path"])
-
-                if txt_path.exists():
-                    st.download_button(
-                        "Download TXT",
-                        data=txt_path.read_text(encoding="utf-8"),
-                        file_name=txt_path.name,
-                        mime="text/plain",
-                        key=f"hist_txt_{row['id']}"
-                    )
-
-                if md_path.exists():
-                    st.download_button(
-                        "Download MD",
-                        data=md_path.read_text(encoding="utf-8"),
-                        file_name=md_path.name,
-                        mime="text/markdown",
-                        key=f"hist_md_{row['id']}"
-                    )
+            st.markdown(
+                f"**{(row['title'] or 'Untitled')[:42]}**  \n"
+                f"<span style='color:#8A7A64;font-size:0.8rem'>"
+                f"{row['created_at']} · {row['language']} · "
+                f"{row['chunk_count']} fragmente</span>",
+                unsafe_allow_html=True,
+            )
+            if row["url"]:
+                st.caption(row["url"])
+            st.divider()
 
 
 # ============================================================
-# INPUT MODE
+# MAIN UI
 # ============================================================
 
-input_mode = st.radio(
-    "Sursă",
-    ["YouTube link", "Upload fișier .txt/.vtt/.srt"],
-    horizontal=True,
-    label_visibility="collapsed"
-)
+st.markdown('<div class="drs-eyebrow">transcript · curățare · prompturi</div>', unsafe_allow_html=True)
+st.markdown(f'<h1 class="drs-title">{APP_TITLE}</h1>', unsafe_allow_html=True)
+st.markdown(f'<p class="drs-sub">{APP_SUBTITLE}</p>', unsafe_allow_html=True)
+st.markdown('<div class="drs-rule"></div>', unsafe_allow_html=True)
 
-source_url = None
-uploaded_file = None
-youtube_info = None
-playlist_entries = []
-selected_entries = []
-
-
-if input_mode == "YouTube link":
-    source_url = st.text_input(
+with st.form("url_form", clear_on_submit=False):
+    url = st.text_input(
         "Link YouTube",
+        placeholder="https://www.youtube.com/watch?v=...",
         label_visibility="collapsed",
-        placeholder="Paste YouTube link sau playlist..."
     )
+    submitted = st.form_submit_button("☕ Extrage transcriptul")
 
-    if source_url:
-        with st.spinner("☕ Citesc metadata video/playlist..."):
-            try:
-                youtube_info = get_youtube_info(source_url)
-                playlist_entries = flatten_playlist_entries(youtube_info)
-            except Exception as e:
-                st.error(f"Nu am putut citi linkul: {e}")
-                youtube_info = None
-
-        if youtube_info:
-            is_playlist = len(playlist_entries) > 1
-
-            if is_playlist:
-                st.success(f"Playlist detectat: {len(playlist_entries)} video-uri")
-
-                max_videos = st.slider(
-                    "Câte video-uri să procesez din playlist?",
-                    1,
-                    min(len(playlist_entries), 50),
-                    min(len(playlist_entries), 5)
-                )
-
-                selected_entries = playlist_entries[:max_videos]
-
-                with st.expander("Video-uri selectate"):
-                    for idx, entry in enumerate(selected_entries, start=1):
-                        st.write(f"{idx}. {entry.get('title') or entry.get('id') or 'Untitled'}")
-            else:
-                selected_entries = [youtube_info]
-
-                title = youtube_info.get("title") or "Untitled"
-                channel = youtube_info.get("channel") or youtube_info.get("uploader") or "—"
-                duration = format_duration(youtube_info.get("duration"))
-                thumbnail = youtube_info.get("thumbnail")
-
-                st.markdown('<div class="video-card">', unsafe_allow_html=True)
-
-                if thumbnail:
-                    st.image(thumbnail, use_container_width=True)
-
-                st.markdown(f"### {title}")
-                st.markdown(
-                    f'<div class="small-muted">Canal: {channel} · Durată: {duration}</div>',
-                    unsafe_allow_html=True
-                )
-                st.markdown("</div>", unsafe_allow_html=True)
-
-
-if input_mode == "Upload fișier .txt/.vtt/.srt":
-    uploaded_file = st.file_uploader(
-        "Încarcă fișier transcript/subtitrare",
-        type=["txt", "vtt", "srt"]
-    )
-
-
-# ============================================================
-# OPTIONS
-# ============================================================
-
-st.markdown("## ⚙️ Opțiuni")
-
-col_a, col_b = st.columns(2)
-
-with col_a:
-    keep_timestamps = st.checkbox("Păstrează timestamps", value=False)
-
-with col_b:
-    save_to_history_enabled = st.checkbox("Salvează în istoric", value=True)
-
-
-selected_lang_label = None
-selected_lang_code = None
-
-if input_mode == "YouTube link" and youtube_info and selected_entries:
-    first_url = get_entry_url(selected_entries[0])
-
-    try:
-        first_info = get_youtube_info(first_url)
-        languages = collect_subtitle_languages(first_info)
-    except Exception:
-        languages = {}
-
-    if languages:
-        selected_lang_label = st.selectbox(
-            "Subtitrare disponibilă",
-            list(languages.keys()),
-            index=0
-        )
-        selected_lang_code = languages[selected_lang_label]["lang"]
-    else:
-        st.warning("Nu am găsit subtitrări listabile pentru acest video. Poți încerca manual.")
-        fallback_langs = {
-            "EN": "en",
-            "RO": "ro",
-            "FR": "fr",
-            "ES": "es",
-            "DE": "de"
-        }
-
-        label = st.selectbox("Limbă manuală", list(fallback_langs.keys()))
-        selected_lang_code = fallback_langs[label]
-
-
-col1, col2, col3 = st.columns(3)
-
-with col1:
-    chunk_size = st.slider(
-        "Caractere / chunk",
-        min_value=2000,
-        max_value=30000,
-        value=15000,
-        step=1000
-    )
-
-with col2:
-    overlap_size = st.slider(
-        "Overlap",
-        min_value=0,
-        max_value=3000,
-        value=500,
-        step=100
-    )
-
-with col3:
-    chunk_mode = st.selectbox(
-        "Tăiere",
-        ["Pe propoziții", "Pe paragrafe", "Pe caractere"]
-    )
-
-
-st.markdown("## 🧠 Prompt AI")
-
-prompt_mode = st.selectbox(
-    "Preset",
-    list(PROMPT_PRESETS.keys()),
-    index=0
-)
-
-default_prompt = PROMPT_PRESETS[prompt_mode]
-
-if prompt_mode == "Custom":
-    default_prompt = """Rol:
-Sarcină:
-(Partea {part}/{total})
-
-Transcript de procesat:
---------------------------------------------------
-"""
-
-with st.expander("Modifică promptul AI"):
-    custom_prompt = st.text_area(
-        "Prompt template",
-        value=default_prompt,
+with st.expander("⚙️ Setări avansate (opțional)"):
+    chunk_size = st.slider("Dimensiune fragment (caractere)", 6000, 20000, DEFAULT_CHUNK_SIZE, 1000)
+    overlap = st.slider("Suprapunere între fragmente (caractere)", 0, 800, DEFAULT_OVERLAP, 50)
+    prompt_template = st.text_area(
+        "Prompt (folosește {part} și {total})",
+        value=DEFAULT_PROMPT,
         height=260,
-        label_visibility="collapsed"
     )
 
+if submitted:
+    st.session_state.pop("result", None)
 
-# ============================================================
-# PROCESS
-# ============================================================
-
-process_clicked = st.button("☕ Procesează", use_container_width=True)
-
-if process_clicked:
-    all_outputs = []
-
-    if input_mode == "YouTube link":
-        if not source_url or not selected_entries:
-            st.error("Introdu un link YouTube valid.")
-            st.stop()
-
-        if not selected_lang_code:
-            st.error("Alege o limbă de subtitrare.")
-            st.stop()
-
-        progress = st.progress(0)
-        status = st.empty()
-
-        for idx, entry in enumerate(selected_entries, start=1):
-            entry_url = get_entry_url(entry)
-            if not entry_url:
-                continue
-
-            status.info(f"Procesez video {idx}/{len(selected_entries)}...")
-
-            try:
-                full_info = get_youtube_info(entry_url)
-                video_id = extract_video_id(full_info)
-                title = full_info.get("title") or entry.get("title") or "Untitled"
-                channel = full_info.get("channel") or full_info.get("uploader") or ""
-
-                existing = find_existing_video(video_id, selected_lang_code)
-
-                if existing:
-                    st.info(
-                        f"Video deja procesat anterior: {title} "
-                        f"({existing['created_at']}). Îl procesez din nou cu setările actuale."
-                    )
-
-                transcript, info_after_download = extract_transcript_from_youtube(
-                    entry_url,
-                    selected_lang_code,
-                    keep_timestamps
-                )
-
-                if not transcript or len(transcript) < 30:
-                    st.warning(f"Nu am găsit transcript utilizabil pentru: {title}")
-                    progress.progress(idx / len(selected_entries))
-                    continue
-
-                chunks = chunk_text(
-                    transcript,
-                    chunk_size=chunk_size,
-                    overlap=overlap_size,
-                    mode=chunk_mode
-                )
-
-                markdown_export = build_markdown_export(
-                    title=title,
-                    url=entry_url,
-                    channel=channel,
-                    language=selected_lang_code,
-                    transcript=transcript,
-                    chunks=chunks,
-                    prompt_mode=prompt_mode,
-                    prompt_template=custom_prompt
-                )
-
-                all_outputs.append({
-                    "title": title,
-                    "url": entry_url,
-                    "video_id": video_id,
-                    "channel": channel,
-                    "language": selected_lang_code,
-                    "transcript": transcript,
-                    "chunks": chunks,
-                    "markdown": markdown_export
-                })
-
-                if save_to_history_enabled:
-                    save_history(
-                        source_type="youtube",
-                        url=entry_url,
-                        video_id=video_id,
-                        title=title,
-                        channel=channel,
-                        language=selected_lang_code,
-                        transcript_text=transcript,
-                        markdown_text=markdown_export,
-                        char_count=len(transcript),
-                        chunk_count=len(chunks),
-                        prompt_mode=prompt_mode
-                    )
-
-            except Exception as e:
-                st.error(f"Eroare la video {idx}: {e}")
-
-            progress.progress(idx / len(selected_entries))
-
-        status.success("Gata.")
-
+    if not url.strip():
+        st.warning("Lipește mai întâi un link YouTube.")
+    elif not looks_like_youtube_url(url):
+        st.error("Acesta nu pare a fi un link YouTube valid. Exemplu: https://www.youtube.com/watch?v=...")
     else:
-        if not uploaded_file:
-            st.error("Încarcă un fișier .txt, .vtt sau .srt.")
-            st.stop()
+        try:
+            with st.spinner("Citesc informațiile videoclipului..."):
+                info = get_video_info(url.strip())
+        except yt_dlp.utils.DownloadError as e:
+            info = None
+            st.error(friendly_ytdlp_error(e))
+        except Exception:
+            info = None
+            st.error("A apărut o eroare neașteptată la citirea videoclipului. Încearcă din nou.")
 
-        raw_content = uploaded_file.read()
-        filename = uploaded_file.name
-        suffix = Path(filename).suffix.lower()
+        if info:
+            options, best = build_subtitle_options(info)
+            if not options:
+                st.error("Acest videoclip nu are nicio subtitrare disponibilă (nici manuală, nici automată).")
+            else:
+                st.session_state["video"] = {"info": info, "options": options, "best": best, "url": url.strip()}
+                st.session_state.pop("chosen_label", None)
 
-        if suffix in [".vtt", ".srt"]:
-            transcript = clean_subtitle_file(raw_content, keep_timestamps=keep_timestamps)
-        else:
-            transcript = raw_content.decode("utf-8", errors="ignore")
-            transcript = clean_text_basic(transcript)
+# ---- video found: language choice + extraction ----
+video_state = st.session_state.get("video")
 
-        if not transcript or len(transcript) < 30:
-            st.error("Fișierul pare gol sau prea scurt.")
-            st.stop()
+if video_state:
+    info = video_state["info"]
+    options = video_state["options"]
+    best = video_state["best"]
+    source_url = video_state["url"]
 
-        title = Path(filename).stem
-        language = "local"
+    st.markdown(
+        f"""<div class="drs-card">
+              <div class="t">{html.escape(info.get("title") or "Untitled")}</div>
+              <div class="m">{html.escape(info.get("channel") or "")} · {format_duration(info.get("duration"))}
+              · {len(options)} subtitrări disponibile</div>
+            </div>""",
+        unsafe_allow_html=True,
+    )
 
-        chunks = chunk_text(
-            transcript,
-            chunk_size=chunk_size,
-            overlap=overlap_size,
-            mode=chunk_mode
+    labels = list(options.keys())
+    if len(labels) > 1:
+        chosen_label = st.selectbox(
+            "Limba subtitrării",
+            labels,
+            index=labels.index(best) if best in labels else 0,
         )
+    else:
+        chosen_label = labels[0]
+        st.caption(f"Subtitrare folosită: **{chosen_label}**")
 
-        markdown_export = build_markdown_export(
-            title=title,
-            url=None,
-            channel=None,
-            language=language,
-            transcript=transcript,
-            chunks=chunks,
-            prompt_mode=prompt_mode,
-            prompt_template=custom_prompt
-        )
+    chosen = options[chosen_label]
 
-        all_outputs.append({
-            "title": title,
-            "url": None,
-            "video_id": None,
-            "channel": None,
-            "language": language,
-            "transcript": transcript,
-            "chunks": chunks,
-            "markdown": markdown_export
-        })
+    # (re)extract when needed: new video, or the user changed the language
+    result = st.session_state.get("result")
+    need_extract = (
+        result is None
+        or result.get("url") != source_url
+        or result.get("label") != chosen_label
+    )
 
-        if save_to_history_enabled:
+    if need_extract:
+        try:
+            with st.spinner("Descarc și curăț subtitrarea..."):
+                transcript = download_subtitle(source_url, chosen["lang"], chosen["type"])
+        except yt_dlp.utils.DownloadError as e:
+            transcript = None
+            st.error(friendly_ytdlp_error(e))
+        except Exception:
+            transcript = None
+            st.error("Subtitrarea nu a putut fi descărcată. Încearcă altă limbă sau alt videoclip.")
+
+        if transcript is not None and not transcript.strip():
+            transcript = None
+            st.error("Subtitrarea a fost găsită, dar este goală după curățare. Încearcă altă limbă.")
+
+        if transcript:
+            st.session_state["result"] = {
+                "url": source_url,
+                "label": chosen_label,
+                "lang": chosen["lang"],
+                "transcript": transcript,
+            }
             save_history(
-                source_type="upload",
-                url=None,
-                video_id=None,
-                title=title,
-                channel=None,
-                language=language,
-                transcript_text=transcript,
-                markdown_text=markdown_export,
-                char_count=len(transcript),
-                chunk_count=len(chunks),
-                prompt_mode=prompt_mode
+                source_url, info.get("id"), info.get("title"),
+                chosen["lang"], len(transcript),
+                len(chunk_text(transcript, chunk_size, overlap)),
+            )
+        result = st.session_state.get("result")
+
+    # ---- results ----
+    if result and result.get("label") == chosen_label:
+        transcript = result["transcript"]
+        chunks = chunk_text(transcript, chunk_size, overlap)
+        prompts = build_prompts(chunks, prompt_template)
+
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Caractere", f"{len(transcript):,}")
+        c2.metric("Tokens (estimat)", f"{estimate_tokens(transcript):,}")
+        c3.metric("Fragmente", len(chunks))
+
+        with st.expander("📄 Transcriptul curat (previzualizare)"):
+            st.text_area(
+                "Transcript",
+                value=transcript,
+                height=240,
+                label_visibility="collapsed",
             )
 
-    if not all_outputs:
-        st.error("Nu am obținut niciun transcript.")
-        st.stop()
-
-    st.markdown("## ✅ Rezultat")
-
-    total_chars = sum(len(item["transcript"]) for item in all_outputs)
-    total_tokens = estimate_tokens(" ".join(item["transcript"] for item in all_outputs))
-    total_chunks = sum(len(item["chunks"]) for item in all_outputs)
-
-    m1, m2, m3 = st.columns(3)
-
-    with m1:
-        st.metric("Caractere", f"{total_chars:,}")
-
-    with m2:
-        st.metric("Tokeni estimați", f"{total_tokens:,}")
-
-    with m3:
-        st.metric("Chunk-uri", total_chunks)
-
-    files_for_zip = {}
-
-    combined_txt_parts = []
-    combined_md_parts = []
-
-    for item in all_outputs:
-        safe_title = sanitize_filename(item["title"])
-
-        files_for_zip[f"{safe_title}.txt"] = item["transcript"]
-        files_for_zip[f"{safe_title}.md"] = item["markdown"]
-
-        combined_txt_parts.append(f"# {item['title']}\n\n{item['transcript']}\n\n")
-        combined_md_parts.append(item["markdown"])
-
-    combined_txt = "\n\n---\n\n".join(combined_txt_parts)
-    combined_md = "\n\n---\n\n".join(combined_md_parts)
-
-    files_for_zip["combined_transcripts.txt"] = combined_txt
-    files_for_zip["combined_export.md"] = combined_md
-
-    zip_mem = build_zip_file(files_for_zip)
-
-    col_d1, col_d2, col_d3 = st.columns(3)
-
-    with col_d1:
-        st.download_button(
-            "⬇️ TXT",
-            data=combined_txt,
-            file_name="dark_roast_transcript.txt",
-            mime="text/plain",
-            use_container_width=True
+        st.markdown("## ✂️ Prompturi gata de copiat")
+        st.caption(
+            "Copiază fiecare fragment (butonul de copiere apare în colțul blocului) "
+            "și lipește-l în ChatGPT, Claude sau Gemini. Fiecare prompt este independent."
         )
 
-    with col_d2:
-        st.download_button(
-            "⬇️ MD",
-            data=combined_md,
-            file_name="dark_roast_export.md",
-            mime="text/markdown",
-            use_container_width=True
+        for idx, prompt in enumerate(prompts, start=1):
+            st.markdown(
+                f"""<div class="drs-card">
+                      <div class="t">Fragmentul {idx}/{len(prompts)}</div>
+                      <div class="m">{html.escape(info.get("title") or "")} · subtitrare: {html.escape(chosen_label)}
+                      · ~{estimate_tokens(prompt):,} tokens</div>
+                    </div>""",
+                unsafe_allow_html=True,
+            )
+            st.code(prompt, language=None, wrap_lines=True)
+
+        # ---- export ----
+        st.markdown("## ⬇️ Export")
+
+        base_name = sanitize_filename(info.get("title") or info.get("id"))
+        md_export = build_markdown_export(
+            info.get("title"), source_url, chosen_label, transcript, prompts
         )
+        prompts_txt = build_prompts_txt(prompts)
 
-    with col_d3:
-        st.download_button(
-            "⬇️ ZIP",
-            data=zip_mem,
-            file_name="dark_roast_export.zip",
-            mime="application/zip",
-            use_container_width=True
-        )
+        e1, e2, e3 = st.columns(3)
+        with e1:
+            st.download_button(
+                "Transcript .txt",
+                data=transcript,
+                file_name=f"{base_name}.txt",
+                mime="text/plain",
+                use_container_width=True,
+            )
+        with e2:
+            st.download_button(
+                "Prompturi .md",
+                data=md_export,
+                file_name=f"{base_name}_prompts.md",
+                mime="text/markdown",
+                use_container_width=True,
+            )
+        with e3:
+            st.download_button(
+                "Tot (.zip)",
+                data=build_zip({
+                    f"{base_name}.txt": transcript,
+                    f"{base_name}_prompts.txt": prompts_txt,
+                    f"{base_name}_prompts.md": md_export,
+                }),
+                file_name=f"{base_name}.zip",
+                mime="application/zip",
+                use_container_width=True,
+            )
 
-    for item_index, item in enumerate(all_outputs, start=1):
-        st.markdown("---")
-        st.markdown(f"## {item['title']}")
-
-        if item["url"]:
-            st.caption(item["url"])
-
-        with st.expander("Transcript curat", expanded=False):
-            st.code(item["transcript"], language="text")
-
-        st.markdown("### AI chunks")
-
-        chunk_tabs = st.tabs([f"Partea {i+1}" for i in range(len(item["chunks"]))])
-
-        total = len(item["chunks"])
-
-        for i, tab in enumerate(chunk_tabs):
-            with tab:
-                chunk_text_part = item["chunks"][i]
-
-                try:
-                    header = custom_prompt.format(part=i + 1, total=total)
-                except Exception:
-                    header = custom_prompt + f"\n\n(Partea {i + 1}/{total})\n--------------------------------------------------\n"
-
-                final_prompt = header + chunk_text_part
-
-                st.caption(
-                    f"Partea {i + 1}/{total} · "
-                    f"{len(chunk_text_part):,} caractere · "
-                    f"~{estimate_tokens(chunk_text_part):,} tokeni"
-                )
-
-                st.code(final_prompt, language="text")
-
-        with st.expander("Markdown export complet"):
-            st.code(item["markdown"], language="markdown")
+st.markdown(
+    '<p style="text-align:center;color:#5C5245;font-size:0.8rem;margin-top:3rem">'
+    "Dark Roast Scholar · fără API keys · fără login · datele rămân la tine</p>",
+    unsafe_allow_html=True,
+)

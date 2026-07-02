@@ -1,2 +1,2 @@
-streamlit
-yt-dlp
+streamlit>=1.40
+yt-dlp>=2025.1.1
